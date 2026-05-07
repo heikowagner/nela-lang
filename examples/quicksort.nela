@@ -1,0 +1,11 @@
+; NELA 0.3 — quicksort
+; qs : List(Nat) -> List(Nat)
+
+(def qs (lst)
+  (match lst
+    (nil  nil)
+    ((h :: t)
+      (append
+        (qs (filter <= h t))
+        (cons h
+          (qs (filter > h t)))))))

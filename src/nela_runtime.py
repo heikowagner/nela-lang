@@ -1,18 +1,21 @@
 """
-NELA Runtime v0.2 — surface language interpreter.
+NELA Runtime v0.3 — surface language interpreter.
 
-The NELA surface language is a typed expression DAG in JSON.
-LLMs read and write the surface layer. Interaction nets are
-the formal semantic foundation (compiler backend), not the
-surface representation. This interpreter evaluates surface
-programs directly.
+The NELA surface language is S-expression syntax (.nela files).
+nela_parser.py converts .nela source text into the dict AST evaluated here.
+Interaction nets are the formal semantic foundation (compiler backend),
+not the surface representation.
 
 Supported ops:
-  var, int, nil, cons, match, call, let, filter, append
+  var, int, bool, nil, cons, match, call, let, if,
+  pair, fst, snd, head, tail, take, drop,
+  add, sub, mul, eq, lt, le, gt, ge, and, or, not,
+  filter, append
 """
 
 import json, sys, time
 from typing import Any
+from nela_parser import parse_program, parse_file
 
 
 # ── Interpreter ────────────────────────────────────────────────────────────────
@@ -179,49 +182,18 @@ def python_quicksort(lst: list) -> list:
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 
-NELA_QS_PROGRAM = {
-    "nela_version": "0.2",
-    "program": "quicksort",
-    "defs": [
-        {
-            "name": "qs",
-            "params": ["lst"],
-            "type": "List(Nat) -> List(Nat)",
-            "body": {
-                "op": "match",
-                "e": {"op": "var", "n": "lst"},
-                "cases": [
-                    {
-                        "pat": "nil",
-                        "body": {"op": "nil"}
-                    },
-                    {
-                        "pat": {"tag": "cons", "x": "h", "xs": "t"},
-                        "body": {
-                            "op": "append",
-                            "l": {
-                                "op": "call", "fn": "qs",
-                                "a": [{"op": "filter", "pred": "<=",
-                                       "pivot": {"op": "var", "n": "h"},
-                                       "list":  {"op": "var", "n": "t"}}]
-                            },
-                            "r": {
-                                "op": "cons",
-                                "head": {"op": "var", "n": "h"},
-                                "tail": {
-                                    "op": "call", "fn": "qs",
-                                    "a": [{"op": "filter", "pred": ">",
-                                           "pivot": {"op": "var", "n": "h"},
-                                           "list":  {"op": "var", "n": "t"}}]
-                                }
-                            }
-                        }
-                    }
-                ]
-            }
-        }
-    ]
-}
+_QS_SOURCE = """\
+(def qs (lst)
+  (match lst
+    (nil  nil)
+    ((h :: t)
+      (append
+        (qs (filter <= h t))
+        (cons h
+          (qs (filter > h t)))))))
+"""
+
+NELA_QS_PROGRAM = parse_program(_QS_SOURCE)
 
 
 def run_test(prog: dict, fn: str, ref_fn, case: list, label: str) -> bool:
@@ -248,7 +220,10 @@ def run_test(prog: dict, fn: str, ref_fn, case: list, label: str) -> bool:
 def _load(path: str) -> dict:
     import os
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(base, "examples", path)) as f:
+    full = os.path.join(base, "examples", path)
+    if path.endswith(".nela"):
+        return parse_file(full)
+    with open(full) as f:
         return json.load(f)
 
 
@@ -338,7 +313,7 @@ if __name__ == "__main__":
     print("\n" + "#"*55)
     print("# MERGESORT")
     print("#"*55)
-    ms_prog = _load("mergesort.nela.json")
+    ms_prog = _load("mergesort.nela")
     ms_pass = all(
         run_test(ms_prog, "mergesort", python_mergesort, c, "ms")
         for c in sort_cases
@@ -365,7 +340,7 @@ if __name__ == "__main__":
     print("\n" + "#"*55)
     print("# STACK VM")
     print("#"*55)
-    vm_prog = _load("stack_vm.nela.json")
+    vm_prog = _load("stack_vm.nela")
     vm_pass = all(
         run_vm_test(vm_prog, prog, label)
         for label, prog in vm_cases
