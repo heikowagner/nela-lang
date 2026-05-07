@@ -1,13 +1,33 @@
 ---
 name: nela-foundations
 description: >
-  Mathematical foundations for NELA language design. Covers Interaction Nets (primary theory),
-  Von Neumann Cellular Automata (locality substrate), Linear Logic (resource semantics),
-  and Dependent Type Theory (verification). Load this skill before designing any NELA
-  language construct, rewrite rule, or type system component.
+  Mathematical foundations for NELA language design.
+  Primary theory: Interaction Nets (Lafont 1990) — local graph rewriting, NOT automata theory.
+  Supporting theories: Linear Logic (resource semantics), Dependent Type Theory (verification).
+  Von Neumann CA is historical background only — do not use it to guide language design decisions.
+  Load this skill before designing any NELA language construct, rewrite rule, or type system component.
 ---
 
 # NELA Mathematical Foundations
+
+> **ORIENTATION — READ FIRST.**
+> Despite the word "Automaton" in the name, NELA is **not** an automata-theory language.
+> The name is historical (kept for brand continuity). The actual computational model is
+> **Interaction Net theory** (Lafont, 1990): local graph rewriting over typed nodes.
+>
+> Theory priority (read the parts below in this order):
+>
+> | Priority | Part | Theory | Role in NELA |
+> |----------|------|--------|--------------|
+> | 1 | Part 1 | **Interaction Nets** | The computation model. Every NELA-C program IS an interaction net. |
+> | 2 | Part 2 | **Linear Logic** | Resource semantics. Types are LL formulas. Cut elimination = reduction. |
+> | 3 | Part 3 | **Dependent Type Theory** | Programs = proofs. Ill-typed nets are unrepresentable. |
+> | 4 | Part 4 | Von Neumann CA | Historical ancestor. Contributed *locality* + *quiescence* metaphors only. |
+>
+> **When extending the language:** use Parts 1–3. Do not reach for CA concepts.
+> If Parts 1–3 and Part 4 conflict, Parts 1–3 win.
+
+---
 
 ## Critical Architecture Decision: Two-Layer Design
 
@@ -86,85 +106,15 @@ while being formally typed and structurally safe.
 
 ---
 
-> **Theoretical hierarchy**: Interaction Nets > Linear Logic > Dependent Types > Von Neumann CA.
-> Von Neumann CA is included for historical grounding and the locality/quiescence metaphor.
-> Where the theories conflict on expressiveness or elegance, prefer Interaction Nets.
-> **These theories justify the semantics of NELA-C (compiler backend), not the surface grammar.**
-
 ---
 
-## Part 1 — Cellular Automata (Von Neumann, 1966)
+## Part 1 — Interaction Nets (Lafont, 1990/1997)
 
-### 1.1 Classical Cellular Automaton
+> **This is the primary theory of NELA.**
+> Every NELA-C program is an interaction net. Strong confluence = free parallelism.
+> 3 combinators are Turing-complete. This theory fully supersedes Von Neumann CA for language design.
 
-**Definition 1.1 (CA).** A *cellular automaton* is a 4-tuple
-
-$$\mathcal{A} = (\mathbb{Z}^d,\; Q,\; \mathcal{N},\; \delta)$$
-
-where:
-- $\mathbb{Z}^d$ is the $d$-dimensional integer lattice of *cells*
-- $Q$ is a finite set of *states* with a distinguished *quiescent* state $q_0 \in Q$
-- $\mathcal{N} = (n_1,\ldots,n_k) \in (\mathbb{Z}^d)^k$ is the *neighborhood vector*
-- $\delta: Q^k \rightarrow Q$ is the *local transition function* satisfying $\delta(q_0,\ldots,q_0) = q_0$
-
-A *configuration* is a function $c: \mathbb{Z}^d \rightarrow Q$ with finite support (finitely many non-quiescent cells).
-
-The *global transition* $\Delta: Q^{\mathbb{Z}^d} \rightarrow Q^{\mathbb{Z}^d}$ is defined by:
-
-$$\Delta(c)(x) = \delta\bigl(c(x+n_1),\ldots,c(x+n_k)\bigr)$$
-
-**Key property (Locality):** $\Delta(c)(x)$ depends only on the finite neighborhood $\{x + n_i\}$. No cell has access to global state.
-
-### 1.2 Von Neumann Neighborhood (2D)
-
-For $d = 2$, the *Von Neumann neighborhood* of radius 1 is:
-
-$$\mathcal{N}_{VN} = \{(0,0),\; (1,0),\; (-1,0),\; (0,1),\; (0,-1)\}$$
-
-giving $k = 5$ (center + 4 cardinal neighbors). The transition function is thus $\delta: Q^5 \rightarrow Q$.
-
-### 1.3 Von Neumann's 29-State Automaton
-
-Von Neumann constructed $Q_{VN}$ with $|Q_{VN}| = 29$ to demonstrate self-reproduction. The state set decomposes as:
-
-| Class | Count | Description |
-|-------|-------|-------------|
-| Ground state $U$ | 1 | Quiescent; no activity |
-| Ordinary transmission (OT) | 8 | 4 directions × {resting, excited}; propagate signals |
-| Special transmission (ST) | 8 | 4 directions × {resting, excited}; transmit in specific conditions |
-| Confluent states (C) | 4 | $C_{00}, C_{01}, C_{10}, C_{11}$; AND/OR logic gates |
-| Sensitized states (S) | 8 | Intermediate states during construction; become T or C after stimulation |
-
-**Total:** $1 + 8 + 8 + 4 + 8 = 29$ ✓
-
-**Transition logic (informal):**
-- An OT cell in direction $d$ excited at time $t$ transmits excitation to its $d$-neighbor at $t+1$
-- A Confluent cell $C_{ij}$ becomes excited iff the logical rule for state $ij$ is satisfied by its neighbors
-- A Sensitized cell transitions to a specific T or C state based on stimulation sequence
-
-**Formal construction schema (Thatcher, 1970 simplification):** The Universal Constructor $UC$ can be described as a finite initial configuration $c_0$ such that:
-
-$$\Delta^T(c_0) = c_0 \cup \text{copy}(c_0) \quad \text{for some } T$$
-
-meaning that after $T$ steps, the automaton has produced a copy of itself adjacent to the original.
-
-### 1.4 Why Von Neumann CA is Insufficient Alone
-
-| Limitation | Impact on LLM language design |
-|------------|-------------------------------|
-| 29 states are ad hoc | No principled derivation from type theory |
-| Grid geometry is fixed | Cannot represent arbitrary graph topologies |
-| No type system | Structural errors not statically prevented |
-| Non-compositional | Hard to decompose large programs modularly |
-| Verbose state encoding | Wastes LLM context tokens |
-
-**Conclusion:** Retain the *locality* and *quiescence* metaphors from CA. Replace the state machine with Interaction Nets for actual language semantics.
-
----
-
-## Part 2 — Interaction Nets (Lafont, 1990/1997)
-
-### 2.1 Signature and Agents
+### 1.1 Signature and Agents
 
 **Definition 2.1 (Signature).** A *signature* $\Sigma$ is a set of *agent names* $\alpha$ each equipped with an *arity* $ar(\alpha) \in \mathbb{N}$.
 
@@ -174,9 +124,9 @@ An *agent* $\alpha$ of arity $n$ is drawn as a node with:
 
 Total ports per agent: $ar(\alpha) + 1$.
 
-### 2.2 Nets
+### 1.2 Nets
 
-**Definition 2.2 (Net).** A *net* $N$ over $\Sigma$ is a graph where:
+**Definition 1.2 (Net).** A *net* $N$ over $\Sigma$ is a graph where:
 - Nodes are agents from $\Sigma$ (each occurrence is distinct)
 - Edges connect ports; each port is connected to **at most one** other port
 - Ports with no connection are *free ports* forming the *interface* $\text{Int}(N)$
@@ -184,17 +134,17 @@ Total ports per agent: $ar(\alpha) + 1$.
 
 A net is *closed* if $\text{Int}(N) = \emptyset$.
 
-### 2.3 Active Pairs
+### 1.3 Active Pairs
 
-**Definition 2.3 (Active pair).** Two agents $\alpha, \beta$ form an *active pair* (or *redex*) when their principal ports are connected:
+**Definition 1.3 (Active pair).** Two agents $\alpha, \beta$ form an *active pair* (or *redex*) when their principal ports are connected:
 
 $$\alpha \bowtie \beta$$
 
 This is the ONLY location where computation can occur.
 
-### 2.4 Interaction Rules
+### 1.4 Interaction Rules
 
-**Definition 2.4 (Rule).** An *interaction rule* for the pair $(\alpha, \beta)$ is:
+**Definition 1.4 (Rule).** An *interaction rule* for the pair $(\alpha, \beta)$ is:
 
 $$\alpha \bowtie \beta \;\longrightarrow\; N_{\alpha\beta}$$
 
@@ -204,9 +154,9 @@ where $N_{\alpha\beta}$ is a net whose free ports are exactly the auxiliary port
 
 **Locality:** A rule application affects only the active pair and the net $N_{\alpha\beta}$; the rest of the net is untouched.
 
-### 2.5 Strong Confluence
+### 1.5 Strong Confluence
 
-**Theorem 2.1 (Strong Confluence, Lafont 1990).** For any interaction system $(\Sigma, R)$, if $N \rightarrow_R N_1$ and $N \rightarrow_R N_2$ arise from **different** active pairs, then there exists $N_3$ such that:
+**Theorem 1.1 (Strong Confluence, Lafont 1990).** For any interaction system $(\Sigma, R)$, if $N \rightarrow_R N_1$ and $N \rightarrow_R N_2$ arise from **different** active pairs, then there exists $N_3$ such that:
 
 $$N_1 \rightarrow_R N_3 \quad \text{and} \quad N_2 \rightarrow_R N_3$$
 
@@ -216,9 +166,9 @@ in exactly **one step each**.
 
 **Proof sketch:** Different active pairs share no ports (by locality). Thus their reductions are completely independent; the resulting nets can be composed to yield $N_3$.
 
-### 2.6 Symmetric Interaction Combinators
+### 1.6 Symmetric Interaction Combinators
 
-**Definition 2.5.** The *Symmetric Interaction Combinators* use signature:
+**Definition 1.5.** The *Symmetric Interaction Combinators* use signature:
 
 $$\Sigma_{SIC} = \{\gamma,\; \delta,\; \varepsilon\}$$
 
@@ -235,34 +185,38 @@ The **six interaction rules**:
 | $\gamma \bowtie \varepsilon$ | Erasure | $\varepsilon$ erases $\gamma$; $\gamma$'s aux ports each get their own $\varepsilon$ |
 | $\delta \bowtie \varepsilon$ | Erasure | Same as above for $\delta$ |
 
-**Theorem 2.2 (Universality, Lafont 1997).** The symmetric combinators $(\Sigma_{SIC}, R_{SIC})$ are computationally universal: any interaction system can be translated into $(\Sigma_{SIC}, R_{SIC})$.
+**Theorem 1.2 (Universality, Lafont 1997).** The symmetric combinators $(\Sigma_{SIC}, R_{SIC})$ are computationally universal: any interaction system can be translated into $(\Sigma_{SIC}, R_{SIC})$.
 
 **Corollary:** Any algorithm expressible in lambda calculus (or equivalently Turing machines) has a representation in NELA using only $\gamma$, $\delta$, $\varepsilon$.
 
-### 2.7 Comparison to Von Neumann CA
+### 1.7 Comparison to Von Neumann CA
+
+> For full detail see Part 4. Summary:
 
 | Dimension | Von Neumann CA | Interaction Nets |
 |-----------|----------------|-----------------|
 | Computation model | State transitions on grid | Graph rewriting |
 | Locality | Yes (neighborhood) | Yes (active pair only) |
-| Self-reproduction | Provable, ad hoc | Derivable via `!` modality |
-| Type system | None | Derived from Linear Logic |
-| Confluence | Not guaranteed | Strong confluence (Theorem 2.1) |
+| Type system | None | Derived from Linear Logic (Part 2) |
+| Confluence | Not guaranteed | Strong confluence (Theorem 1.1) |
 | Turing completeness | Yes (29 states) | Yes (3 symbols) |
 | Compositional | Limited | Yes (tensor product of nets) |
-| LLM token cost | High (29 states × grid) | Low (3 symbols + edges) |
 
 ---
 
-## Part 3 — Linear Logic (Girard, 1987)
+## Part 2 — Linear Logic (Girard, 1987)
 
-### 3.1 Resource Semantics
+> Resource semantics for NELA. LL types are the types of NELA ports.
+> Cut elimination in LL proof nets corresponds exactly to interaction net reduction.
+> A well-typed NELA net IS a proof net — type checking equals proof verification.
+
+### 2.1 Resource Semantics
 
 Classical logic has *weakening* ($A \vdash A \wedge A$) and *contraction* ($A \wedge A \vdash A$), meaning propositions can be copied and discarded freely. **Linear Logic** removes these structural rules, making every resource *exactly once usable*.
 
 **Linear implication:** $A \multimap B$ means "consuming $A$ produces $B$" (no copying of $A$).
 
-### 3.2 Connectives and Their Interaction Net Counterparts
+### 2.2 Connectives and Their Interaction Net Counterparts
 
 | LL connective | Symbol | Interaction net | Meaning |
 |---------------|--------|-----------------|---------|
@@ -280,7 +234,7 @@ Classical logic has *weakening* ($A \vdash A \wedge A$) and *contraction* ($A \w
 
 **Key identity:** Cut elimination in linear logic proof nets corresponds exactly to interaction net reduction. A proof = a NELA program.
 
-### 3.3 Proof Nets
+### 2.3 Proof Nets
 
 A *proof net* is a graph representation of a LL proof where:
 - Formulas are edges (hyperedges)
@@ -291,9 +245,13 @@ A *proof net* is a graph representation of a LL proof where:
 
 ---
 
-## Part 4 — Dependent Type Theory (Martin-Löf, 1984)
+## Part 3 — Dependent Type Theory (Martin-Löf, 1984)
 
-### 4.1 Judgment Forms
+> Programs = proofs. Ill-typed NELA nets are structurally unrepresentable.
+> Use Π-types for parameterized agents, Σ-types for records/existentials,
+> Id-types for equality constraints enforced at construction time.
+
+### 3.1 Judgment Forms
 
 Martin-Löf Type Theory (MLTT) has four basic judgments:
 
@@ -304,7 +262,7 @@ Martin-Löf Type Theory (MLTT) has four basic judgments:
 | $A = B \;\mathsf{type}$ | $A$ and $B$ are equal types |
 | $a = b : A$ | $a$ and $b$ are equal elements of $A$ |
 
-### 4.2 Dependent Products (Π-types)
+### 3.2 Dependent Products (Π-types)
 
 $$\frac{\Gamma \vdash A \;\mathsf{type} \quad \Gamma, x:A \vdash B(x) \;\mathsf{type}}{\Gamma \vdash \Pi_{x:A} B(x) \;\mathsf{type}}$$
 
@@ -312,19 +270,19 @@ This generalizes function types: when $B$ does not depend on $x$, $\Pi_{x:A} B =
 
 In NELA: a Π-type corresponds to a parameterized agent family $\alpha_v$ where the agent type depends on the value $v$ flowing through a port.
 
-### 4.3 Dependent Sums (Σ-types)
+### 3.3 Dependent Sums (Σ-types)
 
 $$\frac{\Gamma \vdash A \;\mathsf{type} \quad \Gamma, x:A \vdash B(x) \;\mathsf{type}}{\Gamma \vdash \Sigma_{x:A} B(x) \;\mathsf{type}}$$
 
 Pairs $(a, b)$ where $b : B(a)$. Used in NELA to encode records and existential types.
 
-### 4.4 Identity Types
+### 3.4 Identity Types
 
 $$\frac{\Gamma \vdash a : A \quad \Gamma \vdash b : A}{\Gamma \vdash \mathsf{Id}_A(a,b) \;\mathsf{type}}$$
 
 Inhabitants of $\mathsf{Id}_A(a,b)$ are *proofs that $a$ equals $b$*. In NELA, these are typed edges that enforce program equalities at construction time.
 
-### 4.5 Curry-Howard-Lambek Correspondence
+### 3.5 Curry-Howard-Lambek Correspondence
 
 | Logic | Programs | Categories |
 |-------|----------|------------|
@@ -338,6 +296,43 @@ Inhabitants of $\mathsf{Id}_A(a,b)$ are *proofs that $a$ equals $b$*. In NELA, t
 | Cut elimination | Beta reduction | Composition |
 
 **NELA consequence:** Writing a NELA program = constructing a proof. An ill-typed NELA net = an unprovable proposition = structurally impossible to construct.
+
+---
+
+## Part 4 — Von Neumann CA: Historical Context Only
+
+> **Do not use this section to guide language design.**
+> Von Neumann CA pre-dates type theory and confluence guarantees.
+> Interaction Nets (Part 1) strictly subsume it for all NELA purposes.
+> This section exists for historical completeness and to document the two concepts NELA inherited.
+
+### 4.1 What NELA Inherited from CA
+
+| Concept | CA definition | NELA interpretation |
+|---------|---------------|--------------------|
+| **Locality** | `Δ(c)(x)` depends only on finite neighborhood `{x + nᵢ}` | Interaction rules touch only the active pair; the rest of the net is untouched |
+| **Quiescence** | `δ(q₀, …, q₀) = q₀`; idle cells stay idle | Nets in normal form (no active pairs) are stable; no spurious transitions |
+
+These two properties are both derivable from the interaction net active-pair constraint. They are not axioms in NELA; they are theorems.
+
+### 4.2 Why CA Was Insufficient (and Superseded)
+
+| CA limitation | Why Interaction Nets are better |
+|--------------|----------------------------------|
+| 29 states are ad hoc | Signature Σ is user-defined; no arbitrary state count |
+| Fixed grid geometry | Nets are arbitrary graphs; topology is data-driven |
+| No type system | Types derived from Linear Logic (Part 2) |
+| No confluence guarantee | Strong Confluence Theorem 1.1 |
+| Non-compositional | Nets compose via tensor product |
+| High LLM token cost | 3 combinators replace 29 states |
+
+### 4.3 Self-Reproduction (Von Neumann Property, Restated)
+
+Von Neumann proved a CA could construct a copy of itself. In NELA this is derivable:
+
+$$N \;\rightarrow_R^*\; N \otimes N$$
+
+constructible using `Dup` agents on all top-level `!`-typed ports. The `!A` modality of Linear Logic (Part 2) is what makes this principled rather than ad hoc.
 
 ---
 
