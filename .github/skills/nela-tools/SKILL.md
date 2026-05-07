@@ -128,9 +128,8 @@ class Port:
 | Strategy | Description | Use case |
 |----------|-------------|----------|
 | `leftmost` | Reduce leftmost-outermost redex | Deterministic sequential execution |
-| `parallel` | Reduce all redexes simultaneously | Maximum parallelism (safe by Thm 2.1) |
+| `parallel` | Reduce all redexes simultaneously | Maximum parallelism (safe by Thm 1.2) |
 | `lazy` | Reduce only redexes on spine | Avoid computing unused branches |
-| `ca_step` | Apply CA Cell transition rules only | Von Neumann substrate simulation |
 
 ### Interface
 
@@ -366,57 +365,6 @@ def verify_equivalence(source_fn, net: Net, n_samples: int = 1000) -> VerifyResu
 
 ---
 
-## Tool 6: `nela.simulate` — CA Substrate Simulation
-
-**Purpose:** Execute NELA programs on a Von Neumann CA grid substrate for hardware-level simulation.
-
-This tool implements the Von Neumann CA locality model from the article: `Cell` agents map to CA cells, port connections map to CA neighborhood edges, and `Cell ⊳ Cell` rules apply as local state transitions.
-
-### Architecture
-
-```
-NELA Net (graph)
-       │
-       │ embed()
-       ▼
-Von Neumann Grid  (each cell holds one agent + local ports)
-  ┌─── ┬─── ┬──────
-  │ C₀ │ C₁ │ C₂  ...
-  ├─── ┼─── ┼──────
-  │ C₃ │ C₄ │ C₅  ...    Cᵢ holds: (agent_type, port_states[4])
-  └─── ┴─── ┴──────
-       │
-       │ Δ^t (global transition, applied in parallel)
-       ▼
-Updated grid
-```
-
-### Interface
-
-```python
-def embed(net: Net, grid_size: tuple[int,int]) -> Grid:
-    """Map interaction net to 2D grid. Raises if net too large for grid."""
-
-def step_ca(grid: Grid) -> Grid:
-    """Apply Von Neumann local transition rules Δ once (all cells simultaneously)."""
-
-def run_ca(grid: Grid, steps: int) -> Grid:
-    """Simulate t steps. Returns final grid."""
-
-def extract_net(grid: Grid) -> Net:
-    """Recover interaction net from grid after simulation."""
-
-def ca_rule(state_center: int, state_N: int, state_E: int,
-            state_S: int, state_W: int) -> int:
-    """
-    The Von Neumann transition function δ: Q^5 → Q.
-    Default: implements NELA Cell agent interaction semantics.
-    Override to experiment with custom CA rules.
-    """
-```
-
----
-
 ## Tool 7: `nela.llm` — LLM Interface
 
 **Purpose:** Bridge between natural language and NELA graph construction/interpretation.
@@ -449,8 +397,7 @@ def spec_to_net(spec: TypedSpec, sig: dict) -> Net:
 def patch_net(net: Net, delta_spec: TypedSpec) -> Net:
     """
     Modify an existing net based on a change specification.
-    Implements the 'modify local cell rule' pattern from the article.
-    Only touches the subgraph relevant to delta_spec.
+    Only touches the subgraph relevant to delta_spec (locality property).
     """
 ```
 
@@ -458,7 +405,6 @@ def patch_net(net: Net, delta_spec: TypedSpec) -> Net:
 
 ```python
 CONTEXT_OVERHEAD = 2048    # tokens reserved for instructions + reasoning
-CA_FIREWALL_EXAMPLE = 42   # tokens for the firewall example from the article (compact format)
 
 def fits_in_context(net: Net, window_size: int = 128_000) -> bool:
     cost = token_cost(net) + CONTEXT_OVERHEAD
@@ -505,7 +451,7 @@ def ripple_effect_free(net: Net, change: PortChange) -> bool:
 |----------|-----------|--------------|
 | No ripple effects | Modifying a subgraph only affects reachable ports | Locality of interaction net rules |
 | No aliasing | No two agents share the same resource | Linearity (each port connected once) |
-| Confluence | All evaluation orders reach same result | Theorem 2.1 (Lafont 1990) |
+| Confluence | All evaluation orders reach same result | Theorem 1.2 (Lafont 1990) |
 | Type safety | No type errors at runtime | Well-typed net (Section 5.3) |
 | Structural impossibility of invalid states | Invalid configurations have no representation | Linear type system + proof net criterion |
 | IO ordering | Side-effecting operations are sequentially ordered | `IOToken` linearity (cannot be `Dup`-ed) |
@@ -519,7 +465,7 @@ def ripple_effect_free(net: Net, change: PortChange) -> bool:
 nl_to_spec (Tool 7)
       │ TypedSpec
       ▼
-spec_to_net (Tool 7) ─── nela.graph (Tool 1)
+spec_to_net (Tool 7) ─── nela.graph (Tool 1b)
       │ Net               │
       ▼                   ▼
 nela.types (Tool 3)   nela.rewrite (Tool 2)
@@ -527,8 +473,7 @@ nela.types (Tool 3)   nela.rewrite (Tool 2)
       ▼                   ▼
 nela.verify (Tool 8)  nela.serialize (Tool 4)
                           │
-                      ┌───┴────────────────┐
-                      ▼                    ▼
-              nela.simulate (Tool 6)  nela.migrate (Tool 5)
-              (CA substrate)          (legacy bridge)
+                          ▼
+                    nela.migrate (Tool 5)
+                    (legacy bridge)
 ```
