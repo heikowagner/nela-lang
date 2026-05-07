@@ -1,0 +1,157 @@
+{
+  "nela_version": "0.2",
+  "program": "mergesort",
+  "note": "Three-function program: split, merge, mergesort. Demonstrates multi-def programs, Pair ADT, length-based recursion termination, and mutual dependency without mutual recursion.",
+
+  "types": {
+    "Nat":        "primitive",
+    "Bool":       "primitive",
+    "List":       "List(A) = Nil | Cons(A, List(A))",
+    "Pair(A,B)":  "Pair(A,B) = MkPair(A, B)"
+  },
+
+  "defs": [
+    {
+      "name": "split",
+      "params": ["lst"],
+      "type": "List(Nat) -> Pair(List(Nat), List(Nat))",
+      "note": "Split list into two halves by interleaving: even-indexed -> left, odd-indexed -> right",
+      "body": {
+        "op": "match",
+        "e": {"op": "var", "n": "lst"},
+        "cases": [
+          {
+            "pat": "nil",
+            "body": {"op": "pair", "l": {"op": "nil"}, "r": {"op": "nil"}}
+          },
+          {
+            "pat": {"tag": "cons", "x": "h", "xs": "t"},
+            "body": {
+              "op": "match",
+              "e": {"op": "var", "n": "t"},
+              "cases": [
+                {
+                  "pat": "nil",
+                  "body": {"op": "pair",
+                           "l": {"op": "cons", "head": {"op": "var", "n": "h"}, "tail": {"op": "nil"}},
+                           "r": {"op": "nil"}}
+                },
+                {
+                  "pat": {"tag": "cons", "x": "h2", "xs": "rest"},
+                  "body": {
+                    "op": "let", "x": "sub",
+                    "e": {"op": "call", "fn": "split", "a": [{"op": "var", "n": "rest"}]},
+                    "in": {
+                      "op": "pair",
+                      "l": {"op": "cons", "head": {"op": "var", "n": "h"},
+                            "tail": {"op": "fst", "e": {"op": "var", "n": "sub"}}},
+                      "r": {"op": "cons", "head": {"op": "var", "n": "h2"},
+                            "tail": {"op": "snd", "e": {"op": "var", "n": "sub"}}}
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "merge",
+      "params": ["a", "b"],
+      "type": "List(Nat) -> List(Nat) -> List(Nat)",
+      "note": "Merge two sorted lists into one sorted list",
+      "body": {
+        "op": "match",
+        "e": {"op": "var", "n": "a"},
+        "cases": [
+          {
+            "pat": "nil",
+            "body": {"op": "var", "n": "b"}
+          },
+          {
+            "pat": {"tag": "cons", "x": "ha", "xs": "ta"},
+            "body": {
+              "op": "match",
+              "e": {"op": "var", "n": "b"},
+              "cases": [
+                {
+                  "pat": "nil",
+                  "body": {"op": "var", "n": "a"}
+                },
+                {
+                  "pat": {"tag": "cons", "x": "hb", "xs": "tb"},
+                  "body": {
+                    "op": "if",
+                    "cond": {"op": "le",
+                             "l": {"op": "var", "n": "ha"},
+                             "r": {"op": "var", "n": "hb"}},
+                    "then": {
+                      "op": "cons",
+                      "head": {"op": "var", "n": "ha"},
+                      "tail": {"op": "call", "fn": "merge",
+                               "a": [{"op": "var", "n": "ta"}, {"op": "var", "n": "b"}]}
+                    },
+                    "else_": {
+                      "op": "cons",
+                      "head": {"op": "var", "n": "hb"},
+                      "tail": {"op": "call", "fn": "merge",
+                               "a": [{"op": "var", "n": "a"}, {"op": "var", "n": "tb"}]}
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "mergesort",
+      "params": ["lst"],
+      "type": "List(Nat) -> List(Nat)",
+      "note": "Base cases: [] and [x] are already sorted. Recursive: split, sort halves, merge.",
+      "body": {
+        "op": "match",
+        "e": {"op": "var", "n": "lst"},
+        "cases": [
+          {
+            "pat": "nil",
+            "body": {"op": "nil"}
+          },
+          {
+            "pat": {"tag": "cons", "x": "h", "xs": "t"},
+            "body": {
+              "op": "match",
+              "e": {"op": "var", "n": "t"},
+              "cases": [
+                {
+                  "pat": "nil",
+                  "body": {"op": "var", "n": "lst"}
+                },
+                {
+                  "pat": {"tag": "cons", "x": "_h2", "xs": "_rest"},
+                  "body": {
+                    "op": "let", "x": "halves",
+                    "e": {"op": "call", "fn": "split", "a": [{"op": "var", "n": "lst"}]},
+                    "in": {
+                      "op": "call", "fn": "merge",
+                      "a": [
+                        {"op": "call", "fn": "mergesort",
+                         "a": [{"op": "fst", "e": {"op": "var", "n": "halves"}}]},
+                        {"op": "call", "fn": "mergesort",
+                         "a": [{"op": "snd", "e": {"op": "var", "n": "halves"}}]}
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

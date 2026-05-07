@@ -1,0 +1,205 @@
+{
+  "nela_version": "0.2",
+  "program": "stack_vm",
+  "note": "A complete stack-based virtual machine — the same execution model as CPython, the JVM, and WebAssembly. Programs are lists of tagged instructions. The machine has two functions: vm_run (the recursive execution loop) and vm_eval (the public entry point that runs a program on an empty stack and returns the top element).",
+
+  "instruction_set": {
+    "PUSH n": "[0, n]  — push integer n onto the stack",
+    "ADD":    "[1]     — pop a (top), pop b;  push a+b",
+    "SUB":    "[2]     — pop a (top), pop b;  push b−a  (e.g. PUSH 10, PUSH 3, SUB → 7)",
+    "MUL":    "[3]     — pop a (top), pop b;  push a*b",
+    "NEG":    "[4]     — pop a;               push 0−a",
+    "DUP":    "[5]     — peek top → push a copy",
+    "SWAP":   "[6]     — pop a, pop b;  push a, push b  (a ends on top)"
+  },
+
+  "defs": [
+    {
+      "name": "vm_run",
+      "params": ["program", "stack"],
+      "type": "List(Instr) -> List(Int) -> List(Int)",
+      "note": "Recursive execution loop. Pattern-match on the program: nil → return stack; cons → dispatch on opcode and recur.",
+      "body": {
+        "op": "match",
+        "e": {"op": "var", "n": "program"},
+        "cases": [
+          {
+            "pat": "nil",
+            "body": {"op": "var", "n": "stack"}
+          },
+          {
+            "pat": {"tag": "cons", "x": "instr", "xs": "rest"},
+            "body": {
+              "op": "let", "x": "opc",
+              "e": {"op": "head", "e": {"op": "var", "n": "instr"}},
+              "in": {
+                "op": "if",
+                "cond": {"op": "eq", "l": {"op": "var", "n": "opc"}, "r": {"op": "int", "v": 0}},
+                "then": {
+                  "note": "PUSH: push instr[1] onto stack",
+                  "op": "call", "fn": "vm_run",
+                  "a": [
+                    {"op": "var", "n": "rest"},
+                    {"op": "cons",
+                     "head": {"op": "head", "e": {"op": "tail", "e": {"op": "var", "n": "instr"}}},
+                     "tail": {"op": "var", "n": "stack"}}
+                  ]
+                },
+                "else_": {
+                  "op": "if",
+                  "cond": {"op": "eq", "l": {"op": "var", "n": "opc"}, "r": {"op": "int", "v": 1}},
+                  "then": {
+                    "note": "ADD: pop a (top), pop b; push a+b",
+                    "op": "let", "x": "a",
+                    "e": {"op": "head", "e": {"op": "var", "n": "stack"}},
+                    "in": {
+                      "op": "let", "x": "b",
+                      "e": {"op": "head", "e": {"op": "tail", "e": {"op": "var", "n": "stack"}}},
+                      "in": {
+                        "op": "call", "fn": "vm_run",
+                        "a": [
+                          {"op": "var", "n": "rest"},
+                          {"op": "cons",
+                           "head": {"op": "add", "l": {"op": "var", "n": "a"}, "r": {"op": "var", "n": "b"}},
+                           "tail": {"op": "tail", "e": {"op": "tail", "e": {"op": "var", "n": "stack"}}}}
+                        ]
+                      }
+                    }
+                  },
+                  "else_": {
+                    "op": "if",
+                    "cond": {"op": "eq", "l": {"op": "var", "n": "opc"}, "r": {"op": "int", "v": 2}},
+                    "then": {
+                      "note": "SUB: pop a (top), pop b; push b-a",
+                      "op": "let", "x": "a",
+                      "e": {"op": "head", "e": {"op": "var", "n": "stack"}},
+                      "in": {
+                        "op": "let", "x": "b",
+                        "e": {"op": "head", "e": {"op": "tail", "e": {"op": "var", "n": "stack"}}},
+                        "in": {
+                          "op": "call", "fn": "vm_run",
+                          "a": [
+                            {"op": "var", "n": "rest"},
+                            {"op": "cons",
+                             "head": {"op": "sub", "l": {"op": "var", "n": "b"}, "r": {"op": "var", "n": "a"}},
+                             "tail": {"op": "tail", "e": {"op": "tail", "e": {"op": "var", "n": "stack"}}}}
+                          ]
+                        }
+                      }
+                    },
+                    "else_": {
+                      "op": "if",
+                      "cond": {"op": "eq", "l": {"op": "var", "n": "opc"}, "r": {"op": "int", "v": 3}},
+                      "then": {
+                        "note": "MUL: pop a (top), pop b; push a*b",
+                        "op": "let", "x": "a",
+                        "e": {"op": "head", "e": {"op": "var", "n": "stack"}},
+                        "in": {
+                          "op": "let", "x": "b",
+                          "e": {"op": "head", "e": {"op": "tail", "e": {"op": "var", "n": "stack"}}},
+                          "in": {
+                            "op": "call", "fn": "vm_run",
+                            "a": [
+                              {"op": "var", "n": "rest"},
+                              {"op": "cons",
+                               "head": {"op": "mul", "l": {"op": "var", "n": "a"}, "r": {"op": "var", "n": "b"}},
+                               "tail": {"op": "tail", "e": {"op": "tail", "e": {"op": "var", "n": "stack"}}}}
+                            ]
+                          }
+                        }
+                      },
+                      "else_": {
+                        "op": "if",
+                        "cond": {"op": "eq", "l": {"op": "var", "n": "opc"}, "r": {"op": "int", "v": 4}},
+                        "then": {
+                          "note": "NEG: pop a; push 0-a",
+                          "op": "let", "x": "a",
+                          "e": {"op": "head", "e": {"op": "var", "n": "stack"}},
+                          "in": {
+                            "op": "call", "fn": "vm_run",
+                            "a": [
+                              {"op": "var", "n": "rest"},
+                              {"op": "cons",
+                               "head": {"op": "sub", "l": {"op": "int", "v": 0}, "r": {"op": "var", "n": "a"}},
+                               "tail": {"op": "tail", "e": {"op": "var", "n": "stack"}}}
+                            ]
+                          }
+                        },
+                        "else_": {
+                          "op": "if",
+                          "cond": {"op": "eq", "l": {"op": "var", "n": "opc"}, "r": {"op": "int", "v": 5}},
+                          "then": {
+                            "note": "DUP: push a copy of the top element",
+                            "op": "let", "x": "a",
+                            "e": {"op": "head", "e": {"op": "var", "n": "stack"}},
+                            "in": {
+                              "op": "call", "fn": "vm_run",
+                              "a": [
+                                {"op": "var", "n": "rest"},
+                                {"op": "cons",
+                                 "head": {"op": "var", "n": "a"},
+                                 "tail": {"op": "var", "n": "stack"}}
+                              ]
+                            }
+                          },
+                          "else_": {
+                            "op": "if",
+                            "cond": {"op": "eq", "l": {"op": "var", "n": "opc"}, "r": {"op": "int", "v": 6}},
+                            "then": {
+                              "note": "SWAP: pop a (top), pop b; push a then b (b ends on top)",
+                              "op": "let", "x": "a",
+                              "e": {"op": "head", "e": {"op": "var", "n": "stack"}},
+                              "in": {
+                                "op": "let", "x": "b",
+                                "e": {"op": "head", "e": {"op": "tail", "e": {"op": "var", "n": "stack"}}},
+                                "in": {
+                                  "op": "call", "fn": "vm_run",
+                                  "a": [
+                                    {"op": "var", "n": "rest"},
+                                    {"op": "cons",
+                                     "head": {"op": "var", "n": "b"},
+                                     "tail": {
+                                       "op": "cons",
+                                       "head": {"op": "var", "n": "a"},
+                                       "tail": {"op": "tail", "e": {"op": "tail", "e": {"op": "var", "n": "stack"}}}
+                                     }}
+                                  ]
+                                }
+                              }
+                            },
+                            "else_": {
+                              "note": "Unknown opcode: return stack unchanged",
+                              "op": "var", "n": "stack"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "vm_eval",
+      "params": ["program"],
+      "type": "List(Instr) -> Int",
+      "note": "Execute program starting with an empty stack; return the top element of the final stack.",
+      "body": {
+        "op": "head",
+        "e": {
+          "op": "call",
+          "fn": "vm_run",
+          "a": [
+            {"op": "var", "n": "program"},
+            {"op": "nil"}
+          ]
+        }
+      }
+    }
+  ]
+}

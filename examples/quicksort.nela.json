@@ -1,0 +1,47 @@
+{
+  "nela_version": "0.2",
+  "program": "quicksort",
+  "layer": "surface",
+  "note": "Surface language: typed expression DAG. LLMs read and write this. Interaction nets are the compiler backend, never hand-written.",
+
+  "types": {
+    "Nat":  "primitive",
+    "List": "List(A) = Nil | Cons(A, List(A))"
+  },
+
+  "defs": [
+    {
+      "name": "qs",
+      "params": ["lst"],
+      "type": "List(Nat) -> List(Nat)",
+      "body": {
+        "op": "match",
+        "e": {"op": "var", "n": "lst"},
+        "cases": [
+          {
+            "pat": "nil",
+            "body": {"op": "nil"}
+          },
+          {
+            "pat": {"tag": "cons", "x": "h", "xs": "t"},
+            "body": {
+              "op": "append",
+              "l": {
+                "op": "call", "fn": "qs",
+                "a": [{"op": "filter", "pred": "<=", "pivot": {"op": "var", "n": "h"}, "list": {"op": "var", "n": "t"}}]
+              },
+              "r": {
+                "op": "cons",
+                "head": {"op": "var", "n": "h"},
+                "tail": {
+                  "op": "call", "fn": "qs",
+                  "a": [{"op": "filter", "pred": ">", "pivot": {"op": "var", "n": "h"}, "list": {"op": "var", "n": "t"}}]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

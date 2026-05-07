@@ -1,0 +1,122 @@
+{
+  "nela_version": "0.1",
+  "program": "quicksort_test_3_1_2",
+  "description": "Apply quicksort to [3,1,2]. Expected output: [1,2,3]. This file composes the qs function (from quicksort.nela.json) with a concrete input list. The graph is closed (no free ports) — it reduces to a Nil/Cons normal form.",
+
+  "sig": {
+    "App":  { "arity": 2, "a0": "func", "a1": "arg" },
+    "Nat":  { "arity": 0, "note": "concrete natural number — tagged with value in node role" },
+    "Nil":  { "arity": 0 },
+    "Cons": { "arity": 2, "a0": "head : Nat", "a1": "tail : List(Nat)" },
+    "QS":   { "note": "inline reference to quicksort.nela.json fix_qs.p", "arity": 0, "type": "List(!Nat) -o List(!Nat)" }
+  },
+
+  "nodes": [
+    { "id": "qs_fn",   "agent": "QS",   "role": "the quicksort function, imported from quicksort.nela.json via fix_qs.p" },
+    { "id": "app_top", "agent": "App",  "role": "top-level application: qs([3,1,2])" },
+    { "id": "n3",      "agent": "Nat",  "value": 3 },
+    { "id": "n1",      "agent": "Nat",  "value": 1 },
+    { "id": "n2",      "agent": "Nat",  "value": 2 },
+    { "id": "nil0",    "agent": "Nil",  "role": "empty tail" },
+    { "id": "cons2",   "agent": "Cons", "role": "Cons(2, Nil)" },
+    { "id": "cons1",   "agent": "Cons", "role": "Cons(1, Cons(2, Nil))" },
+    { "id": "cons3",   "agent": "Cons", "role": "Cons(3, Cons(1, Cons(2, Nil))) = [3,1,2]" }
+  ],
+
+  "edges": [
+    { "from": "qs_fn.p",   "to": "app_top.a0", "note": "qs function is applied" },
+    { "from": "cons3.p",   "to": "app_top.a1", "note": "input list [3,1,2]" },
+    { "from": "n3.p",      "to": "cons3.a0",   "note": "head = 3" },
+    { "from": "cons1.p",   "to": "cons3.a1",   "note": "tail = [1,2]" },
+    { "from": "n1.p",      "to": "cons1.a0",   "note": "head = 1" },
+    { "from": "cons2.p",   "to": "cons1.a1",   "note": "tail = [2]" },
+    { "from": "n2.p",      "to": "cons2.a0",   "note": "head = 2" },
+    { "from": "nil0.p",    "to": "cons2.a1",   "note": "tail = []" }
+  ],
+
+  "interface": [
+    { "port": "app_top.p", "type": "List(!Nat)", "role": "result: the sorted list" }
+  ],
+
+  "expected_normal_form": {
+    "description": "Cons(1, Cons(2, Cons(3, Nil)))",
+    "as_nela_nodes": [
+      { "id": "r1",   "agent": "Nat",  "value": 1 },
+      { "id": "r2",   "agent": "Nat",  "value": 2 },
+      { "id": "r3",   "agent": "Nat",  "value": 3 },
+      { "id": "rnil", "agent": "Nil" },
+      { "id": "rc3",  "agent": "Cons", "a0": "r3.p", "a1": "rnil.p" },
+      { "id": "rc2",  "agent": "Cons", "a0": "r2.p", "a1": "rc3.p"  },
+      { "id": "rc1",  "agent": "Cons", "a0": "r1.p", "a1": "rc2.p"  }
+    ],
+    "free_port": "rc1.p"
+  },
+
+  "reduction_trace": {
+    "description": "Symbolic trace of the first reduction steps. Each step lists the active pair that fires.",
+    "steps": [
+      {
+        "step": 0,
+        "state": "app_top: qs_fn waiting for Cons(3,...)",
+        "active_pairs": [["qs_fn.p", "app_top.a0"]],
+        "note": "Fix unrolls: lam_self receives a Dup-managed copy of fix_qs as self"
+      },
+      {
+        "step": 1,
+        "state": "lam_self receives self-reference via Fix; lam_lst becomes active",
+        "active_pairs": [["lam_self.p", "app_top -- (now App(lam_lst, cons3))"]],
+        "note": "After Fix><Lam: self wired to dup_s; result = lam_lst. App(lam_lst, cons3) forms next redex"
+      },
+      {
+        "step": 2,
+        "state": "lam_lst ><  App(lam_lst, cons3)",
+        "active_pairs": [["lam_lst.p", "app_inner.a0"]],
+        "note": "Beta: lst variable (= match.p) gets cons3; match.a0 becomes new result"
+      },
+      {
+        "step": 3,
+        "state": "Cons(3,...) >< Mat_List — cons rule fires",
+        "active_pairs": [["cons3.p", "match.p"]],
+        "note": "Cons rule: Era(nil_r); h=3 wired to lam_h var; t=Cons(1,Cons(2,Nil)) wired to lam_t var; lam_h(lam_t(...)) applied to h and t"
+      },
+      {
+        "step": 4,
+        "state": "lam_h >< App(lam_h, 3) ; lam_t >< App(lam_t, Cons(1,Cons(2,Nil)))",
+        "active_pairs": [["lam_h.p","app_h"], ["lam_t.p","app_t"]],
+        "note": "Two beta reductions: h=3 enters dup_h; t=Cons(1,...) enters dup_t"
+      },
+      {
+        "step": 5,
+        "state": "dup_h fires: h1=3 to fle; h2=3 to dup_h2 | dup_t fires: t1=Cons(1,Cons(2,Nil)) to fle; t2=same to fgt",
+        "active_pairs": [["dup_h.p","h_val"], ["dup_t.p","t_val"]],
+        "note": "Dup><Cons rules propagate duplication structurally through t (the list)"
+      },
+      {
+        "step": 6,
+        "state": "FilterLE(3, [1,2]) => [1,2] | FilterGT(3, [1,2]) => []",
+        "active_pairs": [["fle.p","..."], ["fgt.p","..."]],
+        "note": "Parallel: both filters run simultaneously by confluence theorem"
+      },
+      {
+        "step": 7,
+        "state": "app_qs_left: qs([1,2]) | app_qs_right: qs([])",
+        "active_pairs": [["app_qs_left.p","..."], ["app_qs_right.p","..."]],
+        "note": "Two recursive Fix unrollings: fully independent active pairs => parallel"
+      },
+      {
+        "step": "...",
+        "state": "qs([]) => Nil (base case, 2 steps) | qs([1,2]) recurses (pivot=1, left=[], right=[2])",
+        "note": "Full trace omitted; normal form reached in O(n log n) parallel steps"
+      },
+      {
+        "step": "N",
+        "state": "NORMAL FORM REACHED",
+        "result": "Cons(1, Cons(2, Cons(3, Nil)))",
+        "active_pairs": [],
+        "note": "No active pairs remain. Result is a linear chain of Cons/Nat/Nil agents."
+      }
+    ]
+  },
+
+  "linearity_status": "CLOSED NET — no free ports in edge set excluding app_top.p (the result); valid for execution"
+}
