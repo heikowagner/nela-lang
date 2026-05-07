@@ -40,7 +40,7 @@ description: >
 >
 > | Layer | Name | What LLMs do | Representation |
 > |-------|------|-------------|----------------|
-> | Surface | **NELA-S** | Read, write, reason | Typed expression DAG (JSON) |
+> | Surface | **NELA-S** | Read, write, reason | S-expression syntax (.nela files); parsed to typed expression DAG |
 > | Core | **NELA-C** | Never touch directly | Interaction net graph |
 >
 > LLMs write NELA-S. A compiler lowers NELA-S → NELA-C for formal verification and optimal
@@ -51,11 +51,37 @@ description: >
 
 ## NELA Surface Language (NELA-S) — What LLMs Write
 
-A NELA-S program is a JSON document with:
-- `defs`: array of named, typed function definitions
-- Each function body is a typed expression DAG (`Expr`)
+A NELA-S program is an S-expression source file (`.nela`). `nela_parser.py` parses it
+into the typed expression DAG dict consumed by the runtime.
+- One or more `(def name (params...) body)` forms
+- Each body is an `Expr` (see grammar below)
 
-### Expr grammar
+### Expr grammar (S-expression surface form)
+
+The S-expression syntax maps 1-to-1 to the dict AST ops below.
+
+```scheme
+; Program
+(def name (param ...) body)
+
+; Expr
+INT | #t | #f | nil | name           ; literals / variables
+(match e case ...)                   ; (nil body) | ((h :: t) body)
+(let x e body)                       ; local binding
+(if cond then else)                  ; conditional
+(cons e e)                           ; list cons
+(pair e e)  (fst e)  (snd e)         ; Pair ADT
+(head e)  (tail e)                   ; list accessors (unsafe)
+(take n e)  (drop n e)               ; list slices
+(+ e e)  (- e e)  (* e e)            ; arithmetic
+(= e e)  (< e e)  (<= e e)  (> e e)  (>= e e)  ; comparison
+(and e e)  (or e e)  (not e)         ; boolean
+(filter pred pivot list)             ; pred: <= > < >= =
+(append e e)                         ; list concat
+(fn arg ...)                         ; function call
+```
+
+### Runtime dict ops (for reference / compiler output)
 
 ```
 Expr :=
@@ -84,25 +110,18 @@ Expr :=
   | {"op": "and"|"or", "l": Expr, "r": Expr}
   | {"op": "not",    "e": Expr}
   -- List combinators (prefer over hand-written recursion where applicable)
-  | {"op": "filter", "pred": "<="|">"|"<"|">="|"==", "pivot": Expr, "list": Expr}
-  | {"op": "append", "l": Expr, "r": Expr}
-
-Case :=
-  | {"pat": "nil",                                    "body": Expr}
-  | {"pat": {"tag": "cons", "x": name, "xs": name},   "body": Expr}
-  | {"pat": {"tag": ConstructorName, ...bindings},     "body": Expr}
+  | append e e                                                   -- list concat
+  | fn arg ...                                                   -- function call (any def name)
 ```
 
 ### Token cost comparison (quicksort)
 
-| Representation | Nodes/keys | Approx tokens |
-|----------------|-----------|---------------|
-| NELA-S (surface) | ~30 keys | ~70 tokens |
-| NELA-C (interaction nets, v0.1) | 17 nodes + 24 edges | ~250 tokens |
-| Python quicksort | 4 lines | ~45 tokens |
-
-NELA-S is ~3.5× more compact than the interaction net representation and within 2× of Python
-while being formally typed and structurally safe.
+| Representation | Tokens (approx) |
+|----------------|----------------|
+| NELA-S v0.3 S-expression | ~9 tokens |
+| NELA-S v0.2 JSON DAG | ~70 tokens |
+| NELA-C interaction nets (v0.1) | ~250 tokens |
+| Python quicksort | ~45 tokens |
 
 ---
 
@@ -424,37 +443,26 @@ NELA types are **dependent linear types**: dependent products and sums over a li
 ### 5.4 Program Serialization Format
 
 > **Version note:** v0.1 used raw interaction net JSON (signature / nodes / edges). This was
-> abandoned — see the two-layer design note at the top of this file. **v0.2 and later use
-> NELA-S (surface language).** The NELA-C interaction net is the compiler output, not the
-> authoring format.
+> abandoned — hand-writing 17-node nets produced 0 reductions. v0.2 introduced a JSON expression
+> DAG surface language. **v0.3 (current) uses S-expression syntax.** The JSON dict AST is the
+> internal IR; `.nela` files are the authoring format. The NELA-C interaction net is compiler
+> output, never hand-authored.
 
-A **NELA-S v0.2** program serializes as:
+A **NELA-S v0.3** program is an S-expression `.nela` file:
 
-```json
-{
-  "nela_version": "0.2",
-  "program": "my_program",
-  "defs": [
-    {
-      "name": "fn_name",
-      "params": ["x"],
-      "type": "List(Nat) -> List(Nat)",
-      "body": { "op": "...", "..." : "..." }
-    },
-    {
-      "name": "helper",
-      "params": ["a", "b"],
-      "type": "List(Nat) -> List(Nat) -> List(Nat)",
-      "body": { "op": "...", "..." : "..." }
-    }
-  ]
-}
+```scheme
+(def fn_name (param ...)
+  body-expr)
+
+; Multi-def (mergesort example):
+(def split (lst) ...)
+(def merge (a b) ...)
+(def mergesort (lst) ...)
 ```
 
-No parentheses. No indentation. No reserved keywords. Pure JSON structure.
-
-The NELA-C format (signature / nodes / edges / interface) is generated by the compiler from
-NELA-S and is never hand-authored.
+The parser (`nela_parser.parse_file`) produces the internal dict representation consumed
+by `eval_expr`. The NELA-C format (signature / nodes / edges / interface) is generated
+by the compiler from that dict and is never hand-authored.
 
 ### 5.5 Self-Reproduction (Von Neumann Property, Restated)
 

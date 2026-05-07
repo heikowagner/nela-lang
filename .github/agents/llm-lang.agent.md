@@ -49,7 +49,7 @@ connect directly to type theory via the Curry-Howard-Lambek correspondence.
 
 ---
 
-## Architecture: Architect + Constructor Pattern (v0.2)
+## Architecture: Architect + Constructor Pattern (v0.3)
 
 ```
 Human NL Input
@@ -64,10 +64,10 @@ Human NL Input
          ▼
 ┌─────────────────────────────┐
 │  NELA Constructor           │  (Logic Model)
-│  Builds NELA-S (surface)    │  — writes typed expression DAG JSON
-│  from TypedSpec             │  — uses op: match/call/filter/append/etc.
+│  Builds NELA-S (surface)    │  — writes NELA-S in S-expression syntax (.nela files)
+│  from TypedSpec             │  — uses: match/call/filter/append/etc.
 └────────┬────────────────────┘
-         │  NELA-S program (quicksort.nela.json)
+         │  NELA-S program (quicksort.nela)
          ▼
 ┌─────────────────────────────┐
 │  NELA Compiler (automatic)  │ — LLMs do NOT write this layer
@@ -87,53 +87,46 @@ directly — those are compiler output, not LLM output.
 
 ### NELA-S Program Shape
 
-```json
-{
-  "nela_version": "0.2",
-  "program": "my_program",
-  "defs": [
-    {
-      "name": "fn_name",
-      "params": ["x"],
-      "type": "InputType -> OutputType",
-      "body": { "op": "...", ... }
-    }
-  ]
-}
+```scheme
+; One or more (def ...) forms
+(def fn_name (param ...)
+  body-expr)
+
+; Multi-def example:
+(def split (lst) ...)
+(def merge (a b) ...)
+(def mergesort (lst) ...)
 ```
 
 ---
 
-## NELA Program Representation (v0.2 — what LLMs write)
+## NELA Program Representation (v0.3 — what LLMs write)
 
-A NELA program is a **typed expression DAG** serialized as JSON (NELA-S).
+A NELA program is written in **S-expression syntax** and saved as a `.nela` file.
 The interaction net layer (NELA-C) is compiler output and is never hand-authored.
 
-```json
-{
-  "nela_version": "0.2",
-  "program": "my_program",
-  "defs": [
-    {
-      "name": "fn_name",
-      "params": ["x"],
-      "type": "List(Nat) -> List(Nat)",
-      "body": { "op": "match", "e": {"op": "var", "n": "x"}, "cases": [ "..." ] }
-    }
-  ]
-}
+```scheme
+; Quicksort in NELA-S v0.3
+(def qs (lst)
+  (match lst
+    (nil  nil)
+    ((h :: t)
+      (append
+        (qs (filter <= h t))
+        (cons h
+          (qs (filter > h t)))))))
 ```
 
-See **Worked Examples** below for complete programs. For the full Expr grammar, see the
+See **Worked Examples** below for complete programs. For the full grammar, see the
 `nela-foundations` skill.
 
 ### Worked Examples (all tests pass — 30 cases)
 
 | File | What it demonstrates |
 |------|----------------------|
-| `examples/quicksort.nela.json` | Recursive sort; `match` / `filter` / `append` / `call` |
-| `examples/mergesort.nela.json` | Three cooperating functions; `pair`/`fst`/`snd`; multi-arg calls |
-| `examples/stack_vm.nela.json` | Stack-based VM with 7 opcodes; runtime dispatch on instruction type |
+| `examples/quicksort.nela` | Recursive sort; `match` / `filter` / `append` / `call` |
+| `examples/mergesort.nela` | Three cooperating functions; `pair`/`fst`/`snd`; multi-arg calls |
+| `examples/stack_vm.nela` | Stack-based VM with 7 opcodes; runtime dispatch on instruction type |
 
 Run all tests: `python3 src/nela_runtime.py`
 

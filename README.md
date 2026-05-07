@@ -17,17 +17,17 @@ You describe intent in English
            │
            ▼
   ┌─────────────────┐
-  │  NELA Architect │  Translate intent → TypedSpec JSON
+  │  NELA Architect │  Translate intent → TypedSpec
   └────────┬────────┘
            │
            ▼
   ┌──────────────────────────┐
-  │  NELA Constructor        │  Write NELA-S: typed expression DAG in JSON
+  │  NELA Constructor        │  Write NELA-S: S-expression syntax (.nela files)
   │  (what LLMs produce)     │  — ops: match / call / let / if / pair / ...
   └────────┬─────────────────┘
-           │  examples/quicksort.nela.json
-           │  examples/mergesort.nela.json
-           │  examples/stack_vm.nela.json
+           │  examples/quicksort.nela
+           │  examples/mergesort.nela
+           │  examples/stack_vm.nela
            ▼
   ┌──────────────────────────┐
   │  NELA Compiler (future)  │  Lower NELA-S → NELA-C (interaction nets)
@@ -62,7 +62,7 @@ mathematical derivations.
 
 ## Working Examples
 
-### Quicksort — `examples/quicksort.nela.json`
+### Quicksort — `examples/quicksort.nela`
 
 Classic divide-and-conquer sort. Single function, recursive `call`, `filter`, `append`, list
 `match`. The baseline example that validated the NELA-S design.
@@ -72,7 +72,7 @@ Input:  [5, 3, 8, 1, 9, 2, 7, 4, 6]
 Output: [1, 2, 3, 4, 5, 6, 7, 8, 9]   ✓
 ```
 
-### Mergesort — `examples/mergesort.nela.json`
+### Mergesort — `examples/mergesort.nela`
 
 Three cooperating functions: `split` (interleave into halves), `merge` (merge sorted lists),
 `mergesort` (base cases + recursive divide). Demonstrates:
@@ -86,7 +86,7 @@ Input:  [20, 19, ..., 1]       (20 elements)
 Output: [1, 2, ..., 20]        ✓
 ```
 
-### Stack VM — `examples/stack_vm.nela.json`
+### Stack VM — `examples/stack_vm.nela`
 
 A complete stack-based virtual machine — the same execution model as CPython, the JVM, and
 WebAssembly. Two functions: `vm_run` (recursive execution loop) and `vm_eval` (entry point).
@@ -120,35 +120,32 @@ What makes this non-trivial in NELA-S:
 
 ## NELA-S Syntax (Quick Reference)
 
-A NELA-S program is a JSON document `{nela_version, program, defs: [...]}`.  
-Each function definition: `{name, params, type, body: Expr}`.
+NELA-S programs are written in S-expression syntax and saved as `.nela` files.
+`src/nela_parser.py` parses `.nela` source into the dict AST evaluated by the runtime.
 
-```
-Expr :=
-  {"op": "var",    "n": name}
-  {"op": "int",    "v": number}
-  {"op": "bool",   "v": bool}
-  {"op": "nil"}                                      list []
-  {"op": "cons",   "head": Expr, "tail": Expr}       x : xs
-  {"op": "match",  "e": Expr, "cases": [Case]}       exhaustive pattern match
-  {"op": "call",   "fn": name, "a": [Expr]}          function call (recursive ok)
-  {"op": "let",    "x": name, "e": Expr, "in": Expr} local binding
-  {"op": "if",     "cond": Expr, "then": Expr, "else_": Expr}
-  {"op": "pair",   "l": Expr, "r": Expr}             (a, b)
-  {"op": "fst",    "e": Expr}                        fst (a, b)
-  {"op": "snd",    "e": Expr}                        snd (a, b)
-  {"op": "head",   "e": Expr}                        head of list
-  {"op": "tail",   "e": Expr}                        tail of list
-  {"op": "add"|"sub"|"mul", "l": Expr, "r": Expr}
-  {"op": "eq"|"lt"|"le"|"gt"|"ge", "l": Expr, "r": Expr}
-  {"op": "and"|"or", "l": Expr, "r": Expr}
-  {"op": "not",    "e": Expr}
-  {"op": "filter", "pred": "<="|">"|"<"|">="|"==", "pivot": Expr, "list": Expr}
-  {"op": "append", "l": Expr, "r": Expr}
+```scheme
+; Program = one or more (def ...) forms
+(def name (param ...) body)
 
-Case :=
-  {"pat": "nil", "body": Expr}
-  {"pat": {"tag": "cons", "x": name, "xs": name}, "body": Expr}
+; Expr
+INT | #t | #f | nil | name           ; literals and variables
+(match e case ...)                   ; exhaustive pattern match
+(let x e body)                       ; local binding
+(if cond then else)                  ; conditional
+(cons e e)                           ; list cons
+(pair e e) (fst e) (snd e)           ; Pair ADT
+(head e) (tail e)                    ; list accessors (unsafe)
+(take n e) (drop n e)                ; list slices
+(+ e e) (- e e) (* e e)              ; arithmetic
+(= e e) (< e e) (<= e e) (> e e) (>= e e)   ; comparison
+(and e e) (or e e) (not e)           ; boolean
+(filter pred pivot list)             ; pred: <= > < >= =
+(append e e)                         ; list concat
+(fn arg ...)                         ; function call
+
+; Pattern (inside match cases)
+nil                                  ; matches []
+(h :: t)                             ; matches cons; _ is wildcard
 ```
 
 ---
@@ -178,10 +175,12 @@ Requires Python 3.10+. No external dependencies.
 llm_coder/
 ├── README.md
 ├── examples/
-│   ├── quicksort.nela.json      NELA-S: recursive quicksort
-│   ├── mergesort.nela.json      NELA-S: three-function mergesort with Pair ADT
-│   └── stack_vm.nela.json       NELA-S: complete stack-based virtual machine
+│   ├── quicksort.nela           NELA-S: recursive quicksort
+│   ├── mergesort.nela           NELA-S: three-function mergesort with Pair ADT
+│   ├── stack_vm.nela            NELA-S: complete stack-based virtual machine
+│   └── *.nela.json              Legacy IR (JSON AST — still loadable)
 ├── src/
+│   ├── nela_parser.py           S-expression parser (.nela → dict AST)
 │   └── nela_runtime.py          Surface language interpreter + test harness
 └── .github/
     ├── agents/
@@ -199,7 +198,7 @@ llm_coder/
 
 | Decision | Rationale |
 |----------|-----------|
-| JSON expression DAG instead of text syntax | LLMs parse and produce structured JSON more reliably than context-sensitive grammars |
+| S-expression syntax (v0.3) instead of JSON (v0.2) | ~8× fewer tokens; familiar to LLMs from Lisp/Scheme training data; balanced parens are much easier to generate than nested JSON key-value dicts; JSON remains the IR |
 | Tree-walking interpreter first, interaction net compiler later | Validated design without compiler dependency; tests prove semantic correctness now |
 | Interaction nets as compiler backend, not surface | v0.1 hand-writing of 17-node nets was unworkable: more tokens than Python, ambiguous port conventions, 0 successful reductions |
 | `"a": [Expr]` for all function arguments | Uniform; supports single-arg and multi-arg functions identically |
