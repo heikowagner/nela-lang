@@ -89,11 +89,12 @@ IOPRT = 0x0A  # io_print: arity 3  ports[1]=frame, ports[2]=token_in, ports[3]=t
 MAT   = 0x0B  # match node: arity = 2+ncases; ports[1]=scrutinee, ports[2..]=branch LAMs
 FST   = 0x0C  # fst projection: arity 2  ports[1]=pair_in, ports[2]=result_out
 SND   = 0x0D  # snd projection: arity 2  ports[1]=pair_in, ports[2]=result_out
+FREF  = 0x0E  # function reference: arity 0, meta=fn_id (fires by deep-copying sub-net)
 
 _TAG_NAMES = {
     CON:"CON", DUP:"DUP", ERA:"ERA", APP:"APP", LAM:"LAM",
     VAR:"VAR", FIX:"FIX", IOT:"IOT", IOKEY:"IOKEY", IOPRT:"IOPRT",
-    MAT:"MAT", FST:"FST", SND:"SND",
+    MAT:"MAT", FST:"FST", SND:"SND", FREF:"FREF",
     INT:"INT", FLT:"FLT", STR:"STR", BOO:"BOO", PAR:"PAR",
     ADD:"ADD", SUB:"SUB", MUL:"MUL", DIV:"DIV", MOD:"MOD", NEG:"NEG",
     EQL:"EQL", LTH:"LTH", LEQ:"LEQ", GTH:"GTH", GEQ:"GEQ",
@@ -378,6 +379,7 @@ class Compiler:
 
 MAGIC   = b"NELAC"
 VERSION = 1
+VERSION_FNTAB = 2  # extended format with function table
 
 
 def _encode_node(node: Node) -> bytes:
@@ -388,12 +390,26 @@ def _encode_node(node: Node) -> bytes:
     return data
 
 
-def net_to_bytes(net: Net, root_nid: int) -> bytes:
+def net_to_bytes(net: Net, root_nid: int,
+                 fn_table: "list[tuple[Net, int]] | None" = None) -> bytes:
+    """Serialise a Net to .nelac bytes.
+    If fn_table is provided (list of (sub_net, root_nid) pairs), use version 2
+    which appends a function table section after the main net root.
+    """
     nodes  = sorted(net._nodes.values(), key=lambda n: n.nid)
-    header = MAGIC + struct.pack(">BI", VERSION, len(nodes))
+    version = VERSION_FNTAB if fn_table is not None else VERSION
+    header = MAGIC + struct.pack(">BI", version, len(nodes))
     body   = b"".join(_encode_node(n) for n in nodes)
     footer = struct.pack(">I", root_nid)
-    return header + body + footer
+    result = header + body + footer
+    if fn_table is not None:
+        result += struct.pack(">I", len(fn_table))
+        for fn_net, fn_root in fn_table:
+            fn_nodes = sorted(fn_net._nodes.values(), key=lambda n: n.nid)
+            result  += struct.pack(">I", len(fn_nodes))
+            result  += b"".join(_encode_node(n) for n in fn_nodes)
+            result  += struct.pack(">I", fn_root)
+    return result
 
 
 def bytes_to_net(data: bytes) -> tuple["Net", int]:
@@ -482,139 +498,273 @@ def compile_and_run(prog: dict, fn_name: str, *arg_values: Any) -> tuple[Any, by
 #   IOKEY(arity=2): ports[0]=principal(connects to IOT), ports[1]=result_pair, ports[2]=_
 #   IOPRT(arity=3): ports[0]=principal(connects to IOT), ports[1]=frame, ports[2]=_, ports[3]=token_out
 
-class _Wire:
-    """A mutable single-use port reference.  Filled in when the var is compiled."""
-    __slots__ = ("nid", "pidx")
-    def __init__(self):
-        self.nid  = _NULL
-        self.pidx = 0
-
-
 class UnreducedCompiler:
-    """Compile a NELA-S program to an unreduced interaction net.
+    """Compile a NELA-S program to an unreduced interaction net using FREF nodes.
+
+    Each user-defined function is compiled into its own sub-Net (function template).
+    At each call site a FREF(fn_id) leaf node is emitted instead of inlining the
+    function body.  The C SIC runtime fires FREF ⊳ X by deep-copying the template
+    and wiring the new root to X — giving each call site its own independent copy.
 
     Usage:
         uc = UnreducedCompiler(prog)
-        root = uc.compile_entry("game_loop", initial_state, initial_map, w)
-        uc.wire_iotoken(root)           # attach IOToken to the entry APP chain
-        bc = net_to_bytes(uc.net, root)
+        outlet = uc.compile_entry("game_loop", initial_state, initial_map, w)
+        outlet = uc.attach_iotoken(outlet)
+        uc.materialize_fn_table()            # compile all referenced bodies
+        bc = net_to_bytes(uc.net, outlet, uc.fn_table_pairs())
     """
 
     def __init__(self, prog: dict):
-        self.defs    = {d["name"]: d for d in prog["defs"]}
-        self.net     = Net()
-        self._wire_counter = 0
-        # cache compiled function LAM nets so we don't duplicate them
-        self._fn_cache: dict[str, int] = {}
-        # track which port index the peer is at, keyed by (nid, port_idx)
-        self._port_of: dict[tuple, int] = {}
+        self.defs     = {d["name"]: d for d in prog["defs"]}
+        self.net      = Net()           # main net (entry-point APP chain)
+        self._port_of: dict = {}        # (nid, pidx) → peer_pidx  (main net)
+        self._fn_cache: dict[str, int] = {}   # fn_name → fn_id
+        self._fn_table: list = []             # fn_id → (Net, root_nid) | None
 
-    # ── public ────────────────────────────────────────────────────────────────
+    # ── low-level helpers ─────────────────────────────────────────────────────
 
-    def compile_fn(self, fn_name: str) -> int:
-        """Return the principal-port nid of the LAM net for fn_name.
-        Uses FIX for recursive functions.
+    def _wire(self, nid_a: int, pa: int, nid_b: int, pb: int):
+        """Bidirectional port connection using raw node IDs.
+        Tracks inverse port indices in self._port_of for attach_iotoken.
         """
-        if fn_name in self._fn_cache:
-            return self._fn_cache[fn_name]
+        self.net.node(nid_a).ports[pa] = nid_b
+        self.net.node(nid_b).ports[pb] = nid_a
+        self._port_of[(nid_a, pa)] = pb
+        self._port_of[(nid_b, pb)] = pa
+
+    def _pattern_binds_name(self, pat: Any, name: str) -> bool:
+        if isinstance(pat, str):
+            return pat == name
+        if isinstance(pat, dict) and pat.get("tag") == "cons":
+            return pat.get("x") == name or pat.get("xs") == name
+        return False
+
+    def _count_uses(self, expr: dict, name: str) -> int:
+        op = expr["op"]
+
+        if op in ("int", "float", "char", "bool", "nil"):
+            return 0
+        if op == "var":
+            return 1 if expr["n"] == name else 0
+
+        if op == "let":
+            c = self._count_uses(expr["e"], name)
+            if expr["x"] == name:
+                return c
+            return c + self._count_uses(expr["in"], name)
+
+        if op == "let_pair":
+            c = self._count_uses(expr["e"], name)
+            if expr["a"] == name or expr["b"] == name:
+                return c
+            return c + self._count_uses(expr["in"], name)
+
+        if op == "if":
+            return (self._count_uses(expr["cond"], name)
+                    + self._count_uses(expr["then"], name)
+                    + self._count_uses(expr["else_"], name))
+
+        if op == "call":
+            return sum(self._count_uses(ae, name) for ae in expr["a"])
+
+        if op in ("add", "sub", "mul", "div", "mod", "eq", "lt", "le", "gt", "ge",
+                  "and", "or", "pair", "append", "get", "take", "drop"):
+            return self._count_uses(expr["l" if "l" in expr else "e"], name) + \
+                   self._count_uses(expr["r" if "r" in expr else "n"], name)
+
+        if op in ("neg", "not", "fst", "snd", "head", "tail", "len",
+                  "sin", "cos", "sqrt", "floor", "ceil", "round", "abs", "ord", "chr", "io_key"):
+            return self._count_uses(expr["e"], name)
+
+        if op == "cons":
+            return self._count_uses(expr["head"], name) + self._count_uses(expr["tail"], name)
+
+        if op == "filter":
+            return self._count_uses(expr["pivot"], name) + self._count_uses(expr["list"], name)
+
+        if op == "array":
+            return self._count_uses(expr["n"], name) + self._count_uses(expr["v"], name)
+
+        if op == "aset":
+            return (self._count_uses(expr["e"], name)
+                    + self._count_uses(expr["n"], name)
+                    + self._count_uses(expr["v"], name))
+
+        if op == "io_print":
+            return self._count_uses(expr["l"], name) + self._count_uses(expr["r"], name)
+
+        if op == "match":
+            total = self._count_uses(expr["e"], name)
+            for case in expr["cases"]:
+                if self._pattern_binds_name(case["pat"], name):
+                    continue
+                total += self._count_uses(case["body"], name)
+            return total
+
+        return 0
+
+    def _make_var_supply(self, source_var_nid: int, uses: int) -> list[int]:
+        """Return exactly `uses` consumable VAR endpoints for one source value."""
+        if uses <= 0:
+            return []
+        if uses == 1:
+            return [source_var_nid]
+
+        supply: list[int] = []
+        cur = source_var_nid
+        for _ in range(uses - 1):
+            dup = self.net.alloc(DUP, 2)
+            self._wire(dup, 0, cur, 0)
+            out_now = self.net.alloc(VAR, 1)
+            out_later = self.net.alloc(VAR, 1)
+            self._wire(dup, 1, out_now, 1)
+            self._wire(dup, 2, out_later, 1)
+            supply.append(out_now)
+            cur = out_later
+        supply.append(cur)
+        return supply
+
+    def _consume_var(self, env: dict, name: str) -> int:
+        if name not in env:
+            raise KeyError(f"Unbound variable: {name!r}")
+        supply = env[name]
+        if not supply:
+            raise RuntimeError(f"Variable {name!r} used too many times")
+        return supply.pop(0)
+
+    # ── function-reference allocation ─────────────────────────────────────────
+
+    def _alloc_fref(self, fn_name: str) -> int:
+        """Return a fresh FREF(fn_id) node in self.net.
+        Registers fn_name in _fn_cache/_fn_table if not already seen.
+        A fresh node is returned every call — no sharing, so each call site is
+        independent.  _fn_table entries are filled by materialize_fn_table().
+        """
+        if fn_name not in self._fn_cache:
+            fn_id = len(self._fn_table)
+            self._fn_cache[fn_name] = fn_id
+            self._fn_table.append(None)      # placeholder; compiled lazily
+        fn_id = self._fn_cache[fn_name]
+        return self.net.alloc(FREF, 0, meta=fn_id)
+
+    # ── public entry-point builder ────────────────────────────────────────────
+
+    def compile_entry(self, fn_name: str, *arg_values) -> int:
+        """Build APP chain: FREF(fn) applied to arg_values in self.net.
+        Returns the outlet VAR nid (result placeholder).
+        """
+        fn_nid = self._alloc_fref(fn_name)
+        cur    = fn_nid
+        result_port = None
+        for val in arg_values:
+            app = self.net.alloc(APP, 2)
+            arg = self._value_to_node(val)
+            self._wire(app, 0, cur, 0)
+            self._wire(app, 2, arg, 0)
+            result_var = self.net.alloc(VAR, 1)
+            self._wire(app, 1, result_var, 1)
+            cur = result_var
+            result_port = (app, 1)
+        outlet = self.net.alloc(VAR, 1)
+        if result_port:
+            self._wire(result_port[0], result_port[1], outlet, 1)
+        return outlet
+
+    def attach_iotoken(self, outlet_nid: int) -> int:
+        """Append an IOToken as the final argument, returning the new outlet."""
+        iot = self.net.alloc(IOT, 0)
+        app = self.net.alloc(APP, 2)
+        outlet = outlet_nid
+        outlet_port = 0 if self.net.node(outlet).ports[0] != _NULL else 1
+        prev_nid  = self.net.node(outlet).ports[outlet_port]
+        if prev_nid == _NULL:
+            raise ValueError("attach_iotoken: no APP to extend")
+        prev_pidx = self._port_of.get((outlet, outlet_port), 1)
+        # disconnect outlet from prev
+        self.net.node(prev_nid).ports[prev_pidx] = _NULL
+        self.net.node(outlet).ports[outlet_port] = _NULL
+        if (outlet, outlet_port) in self._port_of:
+            del self._port_of[(outlet, outlet_port)]
+        if (prev_nid, prev_pidx) in self._port_of:
+            del self._port_of[(prev_nid, prev_pidx)]
+        # insert new APP
+        self._wire(app, 0, prev_nid, prev_pidx)
+        self._wire(app, 2, iot, 0)
+        new_outlet = self.net.alloc(VAR, 1)
+        self._wire(app, 1, new_outlet, 1)
+        return new_outlet
+
+    # ── lazy function-body compilation ────────────────────────────────────────
+
+    def materialize_fn_table(self):
+        """BFS: compile every referenced-but-not-yet-compiled function body.
+        New functions may be discovered while compiling (via _alloc_fref calls
+        inside _compile_expr), so we loop until the table is fully populated.
+        """
+        i = 0
+        while i < len(self._fn_table):
+            if self._fn_table[i] is None:
+                fn_name = next(k for k, v in self._fn_cache.items() if v == i)
+                self._fn_table[i] = self._compile_fn_body(fn_name)
+            i += 1
+
+    def fn_table_pairs(self) -> "list[tuple[Net, int]]":
+        """Return the fully materialised fn_table as (Net, root_nid) pairs."""
+        assert all(e is not None for e in self._fn_table), \
+            "call materialize_fn_table() first"
+        return list(self._fn_table)
+
+    def _compile_fn_body(self, fn_name: str) -> "tuple[Net, int]":
+        """Compile fn_name into a fresh standalone (Net, root_nid) pair.
+        Temporarily swaps self.net / self._port_of so that _compile_expr and
+        _alloc_fref operate on the sub-net.
+        Recursive references to fn_name produce FREF(fn_id) leaf nodes — no
+        infinite recursion and no sharing because each call site gets its own
+        fresh node.
+        """
         fn_def = self.defs[fn_name]
         params = fn_def["params"]
 
-        # detect recursion (simple: does body mention fn_name?)
-        is_recursive = self._mentions(fn_def["body"], fn_name)
+        old_net, old_port_of = self.net, self._port_of
+        self.net      = Net()
+        self._port_of = {}
+        try:
+            body = fn_def["body"]
+            param_use_count = {p: self._count_uses(body, p) for p in params}
 
-        # Build body with env mapping param names → wire (nid, port_idx)
-        # We build nested LAMs from outermost param to innermost
-        # LAM chain: fn = \p0 -> \p1 -> ... body
-        # Represented as: LAM(LAM(...LAM(body, pN_wire)..., p1_wire), p0_wire)
+            param_wire = {}
+            env = {}
+            for p in params:
+                uses = param_use_count[p]
+                if uses == 0:
+                    era = self.net.alloc(ERA, 0)
+                    param_wire[p] = (era, 0)
+                    env[p] = []
+                else:
+                    src = self.net.alloc(VAR, 1)
+                    param_wire[p] = (src, 1)
+                    env[p] = self._make_var_supply(src, uses)
 
-        # Allocate VAR nodes as wire placeholders for each param
-        var_nodes = {}
-        for p in params:
-            vnid = self.net.alloc(VAR, 1)
-            var_nodes[p] = vnid
+            body_nid = self._compile_expr(fn_def["body"], env)
+            cur      = body_nid
+            for p in reversed(params):
+                lam = self.net.alloc(LAM, 2)
+                self._wire(lam, 1, cur,          0)
+                self._wire(lam, 2, param_wire[p][0], param_wire[p][1])
+                cur = lam
+            fn_net  = self.net
+            fn_root = cur
+        finally:
+            self.net, self._port_of = old_net, old_port_of
 
-        env = {p: (vnid, 0) for p, vnid in var_nodes.items()}
-
-        if is_recursive:
-            # placeholder: we'll fill fix_lam_nid later
-            rec_var = self.net.alloc(VAR, 1)
-            env[fn_name] = (rec_var, 0)
-
-        body_nid = self._compile_expr(fn_def["body"], env)
-
-        # wrap in LAMs from innermost to outermost
-        cur = body_nid
-        for p in reversed(params):
-            lam = self.net.alloc(LAM, 2)
-            self._wire(lam, 1, cur, 0)           # ports[1]=body
-            self._wire(lam, 2, var_nodes[p], 0)  # ports[2]=var
-            cur = lam
-
-        if is_recursive:
-            fix = self.net.alloc(FIX, 1)
-            self._wire(fix, 1, cur, 0)            # FIX.ports[1] = outermost LAM
-            # connect rec_var back to fix output port (principal)
-            self._wire(rec_var, 1, fix, 0)        # rec_var wire → fix principal
-            self._fn_cache[fn_name] = fix
-            return fix
-        else:
-            self._fn_cache[fn_name] = cur
-            return cur
-
-    def compile_entry(self, fn_name: str, *arg_values) -> int:
-        """Build APP chain: (fn arg0 arg1 ...) → root nid is final APP.ports[1]."""
-        fn_nid = self.compile_fn(fn_name)
-        cur    = fn_nid
-        result_port = None  # (nid, pidx) of the last APP's result port
-
-        for val in arg_values:
-            app  = self.net.alloc(APP, 2)
-            arg  = self._value_to_node(val)
-            self._wire(app, 0, cur, 0)   # APP.principal ↔ LAM.principal (active pair)
-            self._wire(app, 2, arg, 0)   # APP.ports[2] = arg
-            # APP.ports[1] = result (free port — will be connected by reducer)
-            cur  = app
-            result_port = (app, 1)
-
-        # The result free port of the outermost APP is the "root"
-        # We allocate a special IOT node if the return type is IO,
-        # otherwise a VAR placeholder as the result outlet
-        outlet = self.net.alloc(VAR, 1)
-        if result_port:
-            self._wire(result_port[0], result_port[1], outlet, 0)
-        return outlet   # read result from here after reduction
-
-    def attach_iotoken(self, entry_fn_app_nid: int) -> int:
-        """Append one more APP that passes an IOToken as the final argument.
-        Returns the new outlet VAR node.
-        """
-        iot = self.net.alloc(IOT, 0)
-        app = self.net.alloc(APP, 2)
-        # entry_fn_app_nid is currently the outlet VAR; its port[0] connects
-        # to the last APP's ports[1].  We need to insert a new APP before it.
-        # Find the last APP whose ports[1] → outlet_var
-        outlet = entry_fn_app_nid
-        prev_nid = self.net.node(outlet).ports[0]
-        if prev_nid == _NULL:
-            raise ValueError("attach_iotoken: no APP to extend")
-        prev_pidx = self._port_of.get((outlet, 0), 1)
-        # disconnect outlet from prev
-        self.net.node(prev_nid).ports[prev_pidx] = _NULL
-        self.net.node(outlet).ports[0]           = _NULL
-        del self._port_of[(outlet, 0)]
-        del self._port_of[(prev_nid, prev_pidx)]
-        # build new APP
-        self._wire(app, 0, prev_nid, prev_pidx)  # APP connected where outlet was
-        self._wire(app, 2, iot,  0)              # arg = IOToken
-        new_outlet = self.net.alloc(VAR, 1)
-        self._wire(app, 1, new_outlet, 0)        # result → new outlet
-        return new_outlet
+        return fn_net, fn_root
 
     # ── expression compiler ───────────────────────────────────────────────────
 
     def _compile_expr(self, expr: dict, env: dict) -> int:
-        """Returns the nid whose principal port is the OUTPUT of this expression."""
+        """Returns the nid whose principal port is the OUTPUT of this expression.
+        Uses self.net (which may be main net or a sub-net during _compile_fn_body).
+        """
         op = expr["op"]
 
         if op == "int":
@@ -635,72 +785,76 @@ class UnreducedCompiler:
 
         if op == "var":
             name = expr["n"]
-            if name not in env:
-                raise KeyError(f"Unbound variable: {name!r}")
-            src_nid, src_pidx = env[name]
-            return src_nid  # caller wires to our principal
+            return self._consume_var(env, name)
 
         if op == "let":
             x_var = self.net.alloc(VAR, 1)
             e_nid = self._compile_expr(expr["e"], env)
-            # let x = e in body:
-            # x_var.principal ↔ e output
-            # body compiled with env extended
-            new_env = {**env, expr["x"]: (x_var, 0)}
-            # wire e → x_var
             self._wire(x_var, 1, e_nid, 0)
-            # compile body
-            if isinstance(expr["x"], str) and expr["x"].startswith("("):
-                # tuple destructure — handled as fst/snd below in parser
-                pass
-            body = self._compile_expr(expr["in"], new_env)
-            return body
+            uses = self._count_uses(expr["in"], expr["x"])
+            if uses == 0:
+                er = self.net.alloc(ERA, 0)
+                self._wire(er, 0, x_var, 0)
+                supply = []
+            else:
+                supply = self._make_var_supply(x_var, uses)
+            new_env = {**env, expr["x"]: supply}
+            return self._compile_expr(expr["in"], new_env)
 
         if op == "let_pair":
-            # let (a,b) = e in body
             e_nid = self._compile_expr(expr["e"], env)
             a_var = self.net.alloc(VAR, 1)
             b_var = self.net.alloc(VAR, 1)
             fst_n = self.net.alloc(FST, 2)
             snd_n = self.net.alloc(SND, 2)
-            self._wire(fst_n, 1, e_nid, 0)
-            self._wire(snd_n, 1, e_nid, 0)  # NOTE: DUP needed for two uses
-            # actually we need a DUP to copy e_nid
-            dup = self.net.alloc(DUP, 2)
-            self.net.node(fst_n).ports[1] = _NULL
-            self.net.node(snd_n).ports[1] = _NULL
-            self._wire(dup, 0, e_nid, 0)
-            self._wire(fst_n, 1, dup, 1)
-            self._wire(snd_n, 1, dup, 2)
-            self._wire(fst_n, 2, a_var, 0)
-            self._wire(snd_n, 2, b_var, 0)
-            new_env = {**env, expr["a"]: (a_var, 0), expr["b"]: (b_var, 0)}
+            dup   = self.net.alloc(DUP, 2)
+            self._wire(dup,   0, e_nid, 0)
+            self._wire(fst_n, 1, dup,   1)
+            self._wire(snd_n, 1, dup,   2)
+            self._wire(fst_n, 2, a_var, 1)
+            self._wire(snd_n, 2, b_var, 1)
+            uses_a = self._count_uses(expr["in"], expr["a"])
+            uses_b = self._count_uses(expr["in"], expr["b"])
+            if uses_a == 0:
+                er = self.net.alloc(ERA, 0)
+                self._wire(er, 0, a_var, 0)
+                supply_a = []
+            else:
+                supply_a = self._make_var_supply(a_var, uses_a)
+            if uses_b == 0:
+                er = self.net.alloc(ERA, 0)
+                self._wire(er, 0, b_var, 0)
+                supply_b = []
+            else:
+                supply_b = self._make_var_supply(b_var, uses_b)
+            new_env = {**env, expr["a"]: supply_a, expr["b"]: supply_b}
             return self._compile_expr(expr["in"], new_env)
 
         if op == "if":
-            cond = self._compile_expr(expr["cond"], env)
-            then = self._compile_expr(expr["then"], env)
-            els  = self._compile_expr(expr["else_"], env)
-            ift  = self.net.alloc(IFT, 3)
-            self._wire(ift, 0, cond, 0)
-            self._wire(ift, 1, then, 0)
-            self._wire(ift, 2, els,  0)
+            cond   = self._compile_expr(expr["cond"],  env)
+            then   = self._compile_expr(expr["then"],  env)
+            els    = self._compile_expr(expr["else_"], env)
+            ift    = self.net.alloc(IFT, 3)
             result = self.net.alloc(VAR, 1)
-            self._wire(ift, 3, result, 0)
+            self._wire(ift, 0, cond,   0)
+            self._wire(ift, 1, then,   0)
+            self._wire(ift, 2, els,    0)
+            self._wire(ift, 3, result, 1)
             return result
 
         if op == "call":
-            fn_name = expr["fn"]
+            fn_name   = expr["fn"]
             arg_exprs = expr["a"]
-            fn_nid = self.compile_fn(fn_name)
-            cur = fn_nid
+            # Emit a fresh FREF for this call site — no sharing, each fires independently
+            fn_nid = self._alloc_fref(fn_name)
+            cur    = fn_nid
             for ae in arg_exprs:
-                app = self.net.alloc(APP, 2)
-                arg = self._compile_expr(ae, env)
-                self._wire(app, 0, cur,  0)
-                self._wire(app, 2, arg,  0)
+                app    = self.net.alloc(APP, 2)
+                arg    = self._compile_expr(ae, env)
                 result = self.net.alloc(VAR, 1)
-                self._wire(app, 1, result, 0)
+                self._wire(app, 0, cur,    0)
+                self._wire(app, 2, arg,    0)
+                self._wire(app, 1, result, 1)
                 cur = result
             return cur
 
@@ -711,17 +865,14 @@ class UnreducedCompiler:
             rv  = self._compile_expr(expr["r"], env)
             n   = self.net.alloc(t, 3)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, lv,  0)
-            self._wire(n, 2, rv,  0)
-            self._wire(n, 3, res, 0)
+            self._wire(n, 1, lv,  0); self._wire(n, 2, rv, 0); self._wire(n, 3, res, 1)
             return res
 
         if op == "neg":
             v   = self._compile_expr(expr["e"], env)
             n   = self.net.alloc(NEG, 2)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, v,   0)
-            self._wire(n, 2, res, 0)
+            self._wire(n, 1, v, 0); self._wire(n, 2, res, 1)
             return res
 
         if op in ("eq","lt","le","gt","ge"):
@@ -731,9 +882,7 @@ class UnreducedCompiler:
             rv  = self._compile_expr(expr["r"], env)
             n   = self.net.alloc(t, 3)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, lv,  0)
-            self._wire(n, 2, rv,  0)
-            self._wire(n, 3, res, 0)
+            self._wire(n, 1, lv, 0); self._wire(n, 2, rv, 0); self._wire(n, 3, res, 1)
             return res
 
         if op in ("and","or"):
@@ -743,91 +892,79 @@ class UnreducedCompiler:
             rv  = self._compile_expr(expr["r"], env)
             n   = self.net.alloc(t, 3)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, lv,  0)
-            self._wire(n, 2, rv,  0)
-            self._wire(n, 3, res, 0)
+            self._wire(n, 1, lv, 0); self._wire(n, 2, rv, 0); self._wire(n, 3, res, 1)
             return res
 
         if op == "not":
             v   = self._compile_expr(expr["e"], env)
             n   = self.net.alloc(NOT, 2)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, v,   0)
-            self._wire(n, 2, res, 0)
+            self._wire(n, 1, v, 0); self._wire(n, 2, res, 1)
             return res
 
         if op == "cons":
             h = self._compile_expr(expr["head"], env)
             t = self._compile_expr(expr["tail"], env)
             n = self.net.alloc(CON, 2)
-            self._wire(n, 1, h, 0)
-            self._wire(n, 2, t, 0)
+            self._wire(n, 1, h, 0); self._wire(n, 2, t, 0)
             return n
 
         if op == "append":
-            # a ++ b: needs a runtime append agent or unroll via recursion
-            # For now emit as a special APP to a built-in APPEND function
             lv = self._compile_expr(expr["l"], env)
             rv = self._compile_expr(expr["r"], env)
-            return self._builtin2(0xF0, lv, rv)  # APPEND opcode
+            return self._builtin2(0xF0, lv, rv)
 
         if op == "filter":
-            pivot = self._compile_expr(expr["pivot"], env)
-            lst   = self._compile_expr(expr["list"], env)
+            pivot    = self._compile_expr(expr["pivot"], env)
+            lst      = self._compile_expr(expr["list"],  env)
             pred_tag = {"<=":0xF1,">":0xF2,"<":0xF3,">=":0xF4,"==":0xF5}[expr["pred"]]
             return self._builtin2(pred_tag, pivot, lst)
 
         if op == "match":
-            sc = self._compile_expr(expr["e"], env)
-            # emit a MAT node: ports[0]=principal(scrutinee), ports[1..n]=branch results
+            sc     = self._compile_expr(expr["e"], env)
             ncases = len(expr["cases"])
-            mat = self.net.alloc(MAT, 1 + ncases)
-            self._wire(mat, 0, sc, 0)  # principal ↔ scrutinee output
-            res = self.net.alloc(VAR, 1)
+            mat    = self.net.alloc(MAT, 1 + ncases)
+            res    = self.net.alloc(VAR, 1)
+            self._wire(mat, 0, sc, 0)
             for i, case in enumerate(expr["cases"]):
                 br = self._compile_branch(case, env)
                 self._wire(mat, 1 + i, br, 0)
-            self._wire(mat, 1 + ncases, res, 0)   # last port = result outlet
+            self._wire(mat, 1 + ncases, res, 1)
             return res
 
         if op == "pair":
             lv = self._compile_expr(expr["l"], env)
             rv = self._compile_expr(expr["r"], env)
             n  = self.net.alloc(PAR, 2)
-            self._wire(n, 1, lv, 0)
-            self._wire(n, 2, rv, 0)
+            self._wire(n, 1, lv, 0); self._wire(n, 2, rv, 0)
             return n
 
         if op == "fst":
             v   = self._compile_expr(expr["e"], env)
             n   = self.net.alloc(FST, 2)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, v,   0)
-            self._wire(n, 2, res, 0)
+            self._wire(n, 1, v, 0); self._wire(n, 2, res, 1)
             return res
 
         if op == "snd":
             v   = self._compile_expr(expr["e"], env)
             n   = self.net.alloc(SND, 2)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, v,   0)
-            self._wire(n, 2, res, 0)
+            self._wire(n, 1, v, 0); self._wire(n, 2, res, 1)
             return res
 
         if op == "head":
             v   = self._compile_expr(expr["e"], env)
             n   = self.net.alloc(HED, 2)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, v,   0)
-            self._wire(n, 2, res, 0)
+            self._wire(n, 1, v, 0); self._wire(n, 2, res, 1)
             return res
 
         if op == "tail":
             v   = self._compile_expr(expr["e"], env)
             n   = self.net.alloc(TAL, 2)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, v,   0)
-            self._wire(n, 2, res, 0)
+            self._wire(n, 1, v, 0); self._wire(n, 2, res, 1)
             return res
 
         if op == "get":
@@ -839,8 +976,7 @@ class UnreducedCompiler:
             v   = self._compile_expr(expr["e"], env)
             n   = self.net.alloc(LEN, 2)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 1, v,   0)
-            self._wire(n, 2, res, 0)
+            self._wire(n, 1, v, 0); self._wire(n, 2, res, 1)
             return res
 
         if op == "array":
@@ -871,16 +1007,15 @@ class UnreducedCompiler:
                 v   = self._compile_expr(expr["e"], env)
                 n   = self.net.alloc(tag, 2)
                 res = self.net.alloc(VAR, 1)
-                self._wire(n, 1, v,   0)
-                self._wire(n, 2, res, 0)
+                self._wire(n, 1, v, 0); self._wire(n, 2, res, 1)
                 return res
 
         if op == "io_key":
             tok = self._compile_expr(expr["e"], env)
             n   = self.net.alloc(IOKEY, 2)
             res = self.net.alloc(VAR, 1)
-            self._wire(n, 0, tok, 0)   # principal ↔ IOT
-            self._wire(n, 1, res, 0)   # result pair
+            self._wire(n, 0, tok, 0)
+            self._wire(n, 1, res, 1)
             return res
 
         if op == "io_print":
@@ -888,31 +1023,75 @@ class UnreducedCompiler:
             tok   = self._compile_expr(expr["r"], env)
             n     = self.net.alloc(IOPRT, 3)
             res   = self.net.alloc(VAR, 1)
-            self._wire(n, 0,  tok,   0)
-            self._wire(n, 1,  frame, 0)
-            self._wire(n, 3,  res,   0)
+            self._wire(n, 0, tok,   0)
+            self._wire(n, 1, frame, 0)
+            self._wire(n, 3, res,   1)
             return res
 
         raise NotImplementedError(f"UnreducedCompiler: unhandled op {op!r}")
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    # ── branch / builtin helpers ──────────────────────────────────────────────
 
-    def _wire(self, nid_a: int, pa: int, nid_b: int, pb: int):
-        """Connect port pa of node nid_a to port pb of node nid_b bidirectionally.
-        Stores raw node IDs (not packed) so net_to_bytes serialises correctly.
-        _port_of tracks the matching port index for each (nid, port) pair.
-        """
-        self.net.node(nid_a).ports[pa] = nid_b
-        self.net.node(nid_b).ports[pb] = nid_a
-        self._port_of[(nid_a, pa)] = pb
-        self._port_of[(nid_b, pb)] = pa
+    def _compile_branch(self, case: dict, env: dict) -> int:
+        pat  = case["pat"]
+        body = case["body"]
+        if pat == "nil":
+            dummy = self.net.alloc(VAR, 1)
+            lam   = self.net.alloc(LAM, 2)
+            b     = self._compile_expr(body, env)
+            self._wire(lam, 1, b,     0)
+            self._wire(lam, 2, dummy, 1)
+            return lam
+        if isinstance(pat, dict) and pat.get("tag") == "cons":
+            h_var  = self.net.alloc(VAR, 1)
+            t_var  = self.net.alloc(VAR, 1)
+            hx = pat["x"]
+            tx = pat["xs"]
+            uses_h = self._count_uses(body, hx)
+            uses_t = self._count_uses(body, tx)
+            if uses_h == 0:
+                er = self.net.alloc(ERA, 0)
+                self._wire(er, 0, h_var, 0)
+                supply_h = []
+            else:
+                supply_h = self._make_var_supply(h_var, uses_h)
+            if uses_t == 0:
+                er = self.net.alloc(ERA, 0)
+                self._wire(er, 0, t_var, 0)
+                supply_t = []
+            else:
+                supply_t = self._make_var_supply(t_var, uses_t)
+            new_env = {**env, hx: supply_h, tx: supply_t}
+            b      = self._compile_expr(body, new_env)
+            lam_t  = self.net.alloc(LAM, 2)
+            self._wire(lam_t, 1, b,     0)
+            self._wire(lam_t, 2, t_var, 1)
+            lam_h  = self.net.alloc(LAM, 2)
+            self._wire(lam_h, 1, lam_t, 0)
+            self._wire(lam_h, 2, h_var, 1)
+            return lam_h
+        v_var   = self.net.alloc(VAR, 1)
+        pname   = pat if isinstance(pat, str) else "_"
+        uses_v = 0 if pname == "_" else self._count_uses(body, pname)
+        if uses_v == 0:
+            er = self.net.alloc(ERA, 0)
+            self._wire(er, 0, v_var, 0)
+            supply_v = []
+        else:
+            supply_v = self._make_var_supply(v_var, uses_v)
+        new_env = {**env, pname: supply_v}
+        b       = self._compile_expr(body, new_env)
+        lam     = self.net.alloc(LAM, 2)
+        self._wire(lam, 1, b,     0)
+        self._wire(lam, 2, v_var, 1)
+        return lam
 
     def _builtin2(self, tag: int, a: int, b: int) -> int:
         n   = self.net.alloc(tag, 3)
         res = self.net.alloc(VAR, 1)
         self._wire(n, 1, a,   0)
         self._wire(n, 2, b,   0)
-        self._wire(n, 3, res, 0)
+        self._wire(n, 3, res, 1)
         return res
 
     def _builtin3(self, tag: int, a: int, b: int, c: int) -> int:
@@ -921,61 +1100,12 @@ class UnreducedCompiler:
         self._wire(n, 1, a,   0)
         self._wire(n, 2, b,   0)
         self._wire(n, 3, c,   0)
-        self._wire(n, 4, res, 0)
+        self._wire(n, 4, res, 1)
         return res
 
-    def _mentions(self, expr: dict, name: str) -> bool:
-        """Does expr (potentially recursively) reference function name as a call?"""
-        if expr.get("op") == "call" and expr.get("fn") == name:
-            return True
-        for v in expr.values():
-            if isinstance(v, dict) and self._mentions(v, name):
-                return True
-            if isinstance(v, list):
-                for item in v:
-                    if isinstance(item, dict) and self._mentions(item, name):
-                        return True
-        return False
-
-    def _compile_branch(self, case: dict, env: dict) -> int:
-        """Compile a match branch into a LAM (or nested LAMs) that the MAT node calls."""
-        pat  = case["pat"]
-        body = case["body"]
-        if pat == "nil":
-            # no bindings — constant function LAM(_ => body)
-            dummy = self.net.alloc(VAR, 1)
-            lam   = self.net.alloc(LAM, 2)
-            b     = self._compile_expr(body, env)
-            self._wire(lam, 1, b,     0)
-            self._wire(lam, 2, dummy, 0)
-            return lam
-        if isinstance(pat, dict) and pat.get("tag") == "cons":
-            h_var = self.net.alloc(VAR, 1)
-            t_var = self.net.alloc(VAR, 1)
-            new_env = {**env, pat["x"]: (h_var, 0), pat["xs"]: (t_var, 0)}
-            b      = self._compile_expr(body, new_env)
-            # inner LAM binds tail
-            lam_t  = self.net.alloc(LAM, 2)
-            self._wire(lam_t, 1, b,     0)
-            self._wire(lam_t, 2, t_var, 0)
-            # outer LAM binds head
-            lam_h  = self.net.alloc(LAM, 2)
-            self._wire(lam_h, 1, lam_t, 0)
-            self._wire(lam_h, 2, h_var, 0)
-            return lam_h
-        # catch-all: bind whole value
-        v_var = self.net.alloc(VAR, 1)
-        pname = pat if isinstance(pat, str) else "_"
-        new_env = {**env, pname: (v_var, 0)}
-        b     = self._compile_expr(body, new_env)
-        lam   = self.net.alloc(LAM, 2)
-        self._wire(lam, 1, b,     0)
-        self._wire(lam, 2, v_var, 0)
-        return lam
-
     def _value_to_node(self, value: Any) -> int:
-        """Encode a Python value as leaf/CON/PAR net nodes (for entry arguments)."""
-        c = Compiler.__new__(Compiler)
+        """Encode a Python value as leaf/CON net nodes in self.net."""
+        c      = Compiler.__new__(Compiler)
         c.net  = self.net
         c.defs = self.defs
         return c._py_to_node(value)
@@ -983,16 +1113,36 @@ class UnreducedCompiler:
 
 def compile_program(prog: dict, fn_name: str, *arg_values) -> bytes:
     """
-    Compile a NELA-S program to an *unreduced* interaction net .nelac file.
-    fn_name is the entry point; arg_values are the (non-IO) initial arguments.
-    An IOToken is automatically appended as the last argument.
-    Returns .nelac bytes ready for the C SIC runtime.
+    Compile a NELA-S program call to .nelac bytecode.
+
+    - Pure entry points (declared arity == provided args) are compiled eagerly
+      to reduced normal-form nets (version 1).
+    - Effectful entry points (declared arity == provided args + 1) are compiled
+      as unreduced nets with lazy function table and appended IOToken (version 2).
+
+    Returns bytes ready for the C runtime.
     """
+    target = None
+    for d in prog.get("defs", []):
+        if d.get("name") == fn_name:
+            target = d
+            break
+
+    declared_arity = len(target.get("params", [])) if target is not None else None
+
+    # Pure entry: compile to reduced value net.
+    if declared_arity is not None and declared_arity == len(arg_values):
+        c = Compiler(prog)
+        root = c.compile_call(fn_name, list(arg_values))
+        return net_to_bytes(c.net, root)
+
+    # Effectful entry: unreduced net + IOToken + function table.
     uc     = UnreducedCompiler(prog)
     outlet = uc.compile_entry(fn_name, *arg_values)
-    outlet = uc.attach_iotoken(outlet)
-    return net_to_bytes(uc.net, outlet)
-
+    if declared_arity is not None and declared_arity == len(arg_values) + 1:
+        outlet = uc.attach_iotoken(outlet)
+    uc.materialize_fn_table()
+    return net_to_bytes(uc.net, outlet, uc.fn_table_pairs())
 
 # ── CLI test harness ──────────────────────────────────────────────────────────
 
@@ -1048,6 +1198,7 @@ def qs lst =
         1,0,0,0,0,0,0,1,
         1,1,1,1,1,1,1,1,
     ]
+    
 
     cases = [
         (qs_prog, "qs", [[]], [],         "qs []"),
