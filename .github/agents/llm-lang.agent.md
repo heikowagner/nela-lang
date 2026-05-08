@@ -115,15 +115,21 @@ def qs lst =
 See **Worked Examples** below for complete programs. For the full grammar, see the
 `nela-foundations` skill.
 
-### Worked Examples (all tests pass — 30 cases)
+### Worked Examples (all tests pass — 47 cases)
 
 | File | What it demonstrates |
 |------|----------------------|
 | `examples/quicksort.nela` | Recursive sort; `match` / `filter` / `append` / `call` |
 | `examples/mergesort.nela` | Three cooperating functions; `pair`/`fst`/`snd`; multi-arg calls |
 | `examples/stack_vm.nela` | Stack-based VM with 7 opcodes; runtime dispatch on instruction type |
+| `examples/wolf_grid.nela` | Discrete DDA grid engine; BFS reachability; `div`/`mod`; `(-1)` neg args |
+| `examples/wolf_game.nela` | Playable Wolfenstein raycaster. **All logic in NELA-S.** Python is I/O-only: trig tables (no floats in NELA-S), keyboard, print. |
 
 Run all tests: `python3 src/nela_runtime.py`
+
+**Mission invariant:** When using NELA-S for applications (games, VMs, etc.), the Python harness
+must be strictly I/O-only. Logic that escapes to Python is a mission violation — it belongs in
+NELA-S.
 
 ---
 

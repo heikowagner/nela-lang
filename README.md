@@ -90,34 +90,46 @@ Output: [1, 2, ..., 20]        ✓
 
 Pure integer raycasting engine, ported from
 [`maksimKorzh/wolfenstein-pygame`](https://github.com/maksimKorzh/wolfenstein-pygame).
-Demonstrates applying NELA to a real game codebase. The portables run now; the blocked items
-define the v0.5 language roadmap.
-
-**What runs in v0.4:**
+Discrete DDA (cardinal directions), BFS reachability, no trig needed.
 
 | Function | Logic |
 |---|---|
-| `map_get map idx` | Index into flat integer grid list via `head (drop idx map)` |
+| `map_get map idx` | Index flat grid list via built-in `head (drop idx map)` |
 | `is_wall map x y w` | Wall check: `map_get map (x + y * w)` |
-| `cast_ray map x y dx dy w` | Discrete DDA: step `(dx,dy)` until hitting a wall, return step count |
-| `wall_height dist` | Projected height: `19200 / dist` (integer approx of `MAP_SCALE × 300 / depth`) |
-| `scan_4 map px py w` | Cast in ±x, ±y directions; return `[right, down, left, up]` distances |
-| `reachable map sx sy gx gy w` | BFS on grid; returns 1 if open path exists, 0 otherwise |
+| `cast_ray map x y dx dy w` | DDA: step `(dx,dy)` until wall; return step count |
+| `wall_height dist` | Projected height: `19200 / dist` |
+| `scan_4 map px py w` | Cast in ±x, ±y; return `[right, down, left, up]` |
+| `reachable map sx sy gx gy w` | BFS; returns 1 if open path exists, 0 otherwise |
 
 ```
 scan_4 map 1 1 5  →  [3, 3, 1, 1]   (open corridor right/down, wall left/up)
 ```
 
-**Blocked — v0.5 requirements:**
+### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.5 — playable)*
 
-| Blocker | Needed for | Language feature |
-|---|---|---|
-| `sin`/`cos`/`sqrt` | Real angle-based ray direction | `float` type + trig builtins |
-| Tile chars `'S'`,`'B'`,`' '` | Typed map cells | `char` / `atom` type |
-| `player_x += ...` | Mutable player state | `IOToken` linear I/O threading |
-| `MAP[i] = ' '` | Openable doors | `IOToken` + mutable array |
-| `O(1)` map lookup | Performance | `Array` type (replace `drop`/`head`) |
-| `pygame.blit`, `display.flip` | Rendering | FFI or native output ops |
+Fully playable Wolfenstein raycaster. **All game logic is pure NELA-S.** Python is strictly I/O:
+trig tables (unavoidable — NELA-S has no floats), raw keyboard, and `print`. No logic in Python.
+
+Fixed-point arithmetic: 1 cell = 64 units. Angles 0–359°. Trig tables: sin/cos×64 passed as
+list arguments. State: `[px, py, angle]`.
+
+| NELA-S function | Logic |
+|---|---|
+| `get_nth lst n` | O(1) index via built-in `head (drop n lst)` |
+| `norm_angle a` | Normalize to 0–359 (handles negatives by recursion) |
+| `is_wall`, `map_get` | Same as wolf_grid |
+| `ray_march map w rx ry dx dy limit` | Fixed-point DDA, 512-step limit |
+| `render_col ...` | Single column wall height: `168 / (dist + 1)` |
+| `render_cols ...` | 40 columns across ±20° FOV → list of heights |
+| `shade_of h screen_h` | Shade level integer (0=ceil, 1=floor, 2–4=wall distance) |
+| `frame_cell row h mid screen_h` | Pixel decision: ceiling / floor / wall shade |
+| `frame_row`, `make_frame` | Assemble 21×40 frame as `list[list[int]]` |
+| `render_frame ...` | Heights + full frame in one call |
+| `move_forward`, `move_back` | Fixed-point movement with collision detection |
+| `turn state delta` | Rotate by delta degrees; normalise |
+| `update state key map w sin_tab cos_tab` | Dispatch on key 0–3 → new state |
+
+**Run the game:** `cd src && python3 wolf_player.py`  (W/S = move, A/D = turn, Q = quit)
 
 ---
 
@@ -201,6 +213,7 @@ Expected output:
 # QUICKSORT    9/9 PASS
 # MERGESORT    9/9 PASS
 # STACK VM    12/12 PASS
+# WOLF GRID   17/17 PASS
 Overall: ALL TESTS PASSED
 ```
 
@@ -217,10 +230,13 @@ llm_coder/
 │   ├── quicksort.nela           NELA-S: recursive quicksort
 │   ├── mergesort.nela           NELA-S: three-function mergesort with Pair ADT
 │   ├── stack_vm.nela            NELA-S: complete stack-based virtual machine
+│   ├── wolf_grid.nela           NELA-S: discrete DDA grid engine + BFS reachability
+│   ├── wolf_game.nela           NELA-S: angle raycaster, frame assembly, game update
 │   └── *.nela.json              Legacy IR (JSON AST — still loadable)
 ├── src/
 │   ├── nela_parser.py           ML/Haskell-like syntax parser (.nela → dict AST)
-│   └── nela_runtime.py          Surface language interpreter + test harness
+│   ├── nela_runtime.py          Surface language interpreter + test harness
+│   └── wolf_player.py           I/O-only harness: trig tables, keyboard, print
 └── .github/
     ├── agents/
     │   └── llm-lang.agent.md    VS Code agent: LLM Language Architect
@@ -284,16 +300,27 @@ their rewrite rules are actually specified.
 
 ---
 
-## v0.5 Roadmap
+## v0.5 — Completed
 
-Derived from the Wolfenstein port — each row is a concrete blocker with a clear theoretical grounding.
+All v0.5 goals derived from the Wolfenstein port have been implemented:
+
+| Feature | Status | Notes |
+|---|---|---|
+| `%` modulo operator | ✅ done | `_parse_mul` + `op=="mod"` in runtime |
+| `/` integer division | ✅ done | `op=="div"` in runtime |
+| Unary `-` (negation) | ✅ done | `_parse_unary()` → `{"op":"neg","e":...}` |
+| Neg literals in arg position | ✅ done | Use `(-1)` paren syntax (Haskell convention) |
+| Fixed-point trig raycasting | ✅ done | Sin/cos tables passed as list args from Python |
+| Frame assembly in NELA-S | ✅ done | `shade_of`, `frame_cell`, `make_frame`, `render_frame` |
+| I/O-only Python harness | ✅ done | `wolf_player.py` — keyboard + print only |
+
+## v0.6 Roadmap
 
 | Feature | Motivation | Theory |
 |---|---|---|
-| `float` literals + `sin`/`cos`/`sqrt`/`atan2` | Real angle-based raycasting; any physics | Add `Float` base type alongside `Int`; trig builtins as primitive agents |
-| `char` / `atom` type | Tile chars (`'S'`, `'B'`, `' '`); string keys | Tagged integer or interned symbol; fits `⊕` sum type in NELA-C |
-| `IOToken` linear I/O | Mutable player position, door state, rendering | `IO(A)` type from Linear Logic; token stays linear to enforce sequencing |
-| `Array n A` with O(1) index | Replace `drop`/`head` O(n) map lookup | Sigma type `Σ(i:Fin n). A` in dependent type layer; compiler maps to mutable buffer |
-| `neg` integer literals | Write `-1` in source instead of `(0 - 1)` | Trivial tokenizer extension |
-| Multi-element list literals `[a, b, c, d]` | Inline init of maps, direction tables | Parser sugar; desugars to `a :: b :: c :: d :: []` |
+| `float` literals + `sin`/`cos` builtins | Eliminate Python trig tables; pure NELA-S trig | Add `Float` base type; trig as primitive agents |
+| `char` / `atom` type | Typed map cells (`'S'`, `'B'`, `' '`); string keys | Tagged integer / interned symbol; fits `⊕` sum type |
+| `IOToken` linear I/O | Mutable player state, door state, render side effects | `IO(A)` from Linear Logic; linear token enforces sequencing |
+| `Array n A` with O(1) index | Replace `head (drop n lst)` O(n) lookup | Sigma type `Σ(i:Fin n). A`; compiler maps to buffer |
+| NELA-C compiler | Formal verification + optimal parallel reduction | Interaction net graph; lowers NELA-S → NELA-C |
 

@@ -51,34 +51,44 @@ description: >
 
 ## NELA Surface Language (NELA-S) — What LLMs Write
 
-A NELA-S program is an S-expression source file (`.nela`). `nela_parser.py` parses it
+A NELA-S program is an ML/Haskell-like source file (`.nela`). `nela_parser.py` parses it
 into the typed expression DAG dict consumed by the runtime.
-- One or more `(def name (params...) body)` forms
+- One or more `def name param ... = body` forms
 - Each body is an `Expr` (see grammar below)
 
-### Expr grammar (S-expression surface form)
+### Expr grammar (ML/Haskell-like surface form)
 
-The S-expression syntax maps 1-to-1 to the dict AST ops below.
+```haskell
+-- Program
+def name param ... = body
 
-```scheme
-; Program
-(def name (param ...) body)
+-- Expr
+INT | name                          -- literals / variables
+(-INT)                              -- negative literal in arg position
+[]                                  -- nil
+[a, b, c]                           -- list literal (sugar for a :: b :: c :: [])
+e :: e                              -- cons (right-associative)
+e ++ e                              -- append
+(e, e)                              -- pair
+[x <- list | pred]                  -- list comprehension (filter)
+match e | pat = body | pat = body   -- exhaustive pattern match
+let x = e in body                   -- local binding
+let (a, b) = e in body              -- tuple destructuring
+if e then e else e                  -- conditional
+e + e | e - e | e * e | e / e | e % e  -- arithmetic (/ = int div, % = mod)
+-e                                  -- unary negation
+e == e | e < e | e <= e | e > e | e >= e  -- comparison
+e && e | e || e | not e             -- boolean
+f e e ...                           -- function application
 
-; Expr
-INT | #t | #f | nil | name           ; literals / variables
-(match e case ...)                   ; (nil body) | ((h :: t) body)
-(let x e body)                       ; local binding
-(if cond then else)                  ; conditional
-(cons e e)                           ; list cons
-(pair e e)  (fst e)  (snd e)         ; Pair ADT
-(head e)  (tail e)                   ; list accessors (unsafe)
-(take n e)  (drop n e)               ; list slices
-(+ e e)  (- e e)  (* e e)            ; arithmetic
-(= e e)  (< e e)  (<= e e)  (> e e)  (>= e e)  ; comparison
-(and e e)  (or e e)  (not e)         ; boolean
-(filter pred pivot list)             ; pred: <= > < >= =
-(append e e)                         ; list concat
-(fn arg ...)                         ; function call
+-- Pattern (inside match cases)
+[]             -- nil
+[h]            -- singleton
+h :: t         -- cons
+h :: h2 :: t   -- nested cons (3-spine)
+(p1, p2)       -- tuple decomposition
+_              -- wildcard
+name           -- catch-all variable
 ```
 
 ### Runtime dict ops (for reference / compiler output)
@@ -104,14 +114,16 @@ Expr :=
   | {"op": "take",   "n": Expr, "e": Expr}                      -- first n elements
   | {"op": "drop",   "n": Expr, "e": Expr}                      -- drop first n
   -- Arithmetic & comparison
-  | {"op": "add"|"sub"|"mul", "l": Expr, "r": Expr}
+  | {"op": "add"|"sub"|"mul"|"div"|"mod", "l": Expr, "r": Expr}
+    -- div = integer division, mod = remainder
+  | {"op": "neg", "e": Expr}                                    -- unary negation (-e)
   | {"op": "eq"|"lt"|"le"|"gt"|"ge", "l": Expr, "r": Expr}
   -- Boolean combinators
   | {"op": "and"|"or", "l": Expr, "r": Expr}
   | {"op": "not",    "e": Expr}
   -- List combinators (prefer over hand-written recursion where applicable)
-  | append e e                                                   -- list concat
-  | fn arg ...                                                   -- function call (any def name)
+  | {"op": "append", "l": Expr, "r": Expr}                      -- list concat (++)
+  | {"op": "filter", "pred": str, "pivot": Expr, "list": Expr}  -- [x <- list | pred pivot]
 ```
 
 ### Token cost comparison (quicksort)
