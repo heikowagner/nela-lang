@@ -1959,6 +1959,52 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    /* ── GPU Framebuffer Architecture (v0.10+) ─────────────────────────────
+     *
+     * DESIGN: Match Python's clean separation:
+     *   NELA-C computation (interaction net reduction)
+     *       ↓
+     *   Render data: list-of-lists of shade integers (0-4)
+     *       ↓
+     *   Host GPU backend (Vulkan/Metal/OpenGL/WebGL)
+     *
+     * NOT YET IMPLEMENTED in C runtime (known blocker: scheduler doesn't reach
+     * I/O frontier in unreduced game graphs).  When fixed:
+     *
+     *   1. io_print_frame(frame_data) callback
+     *      - Input: interaction net representing list[list[int]] (shade grid)
+     *      - Extract frame structure (40×21 grid of shade values 0-4)
+     *      - Call gpu_render_frame(frame)
+     *
+     *   2. gpu_render_frame(frame) — GPU backend stub
+     *      - Each cell (col, row) has shade integer
+     *      - shade_colors[shade] = RGB triplet (0=dark gray → 4=white)
+     *      - Draw pixel_size × pixel_size rectangle at (col*pixel_size, row*pixel_size)
+     *      - Options:
+     *        a) Pygame SDL2 backend (Python-style texture upload)
+     *        b) Vulkan/Metal via native GPU API (fastest, platform-specific)
+     *        c) WebGL if compiled to WASM
+     *      - Target: 30 FPS (same as Python)
+     *
+     *   3. io_getch() callback — unified keyboard input
+     *      - Input: Waits for keyboard input
+     *      - Output: Single ASCII char (w/a/s/d/e/q, or empty)
+     *      - Could read from:
+     *        a) Terminal raw mode (current, fallback)
+     *        b) GPU framework event loop (Pygame, GLFW, Vulkan WSI)
+     *      - Should not block; return empty string if no key available
+     *
+     * CURRENT STATUS:
+     *   - Python: Fully implemented (GPU + terminal fallback) ✓
+     *   - C: Terminal mode only, GPU stubs needed
+     *   - Blocker: C scheduler doesn't reach I/O frontier in game nets
+     *   - When scheduler fixed, GPU path will work automatically
+     *
+     * Future extensions:
+     *   - Texture mapping (shader-based wall/sprite tiling)
+     *   - Lighting calculations pushed into GPU (fragment shaders)
+     *   - Parallel raycasting on GPU compute shaders
+     * ─────────────────────────────────────────────────────────────────────── */
     if (game) {
         printf("\033[2J\033[H");  /* clear screen */
         fflush(stdout);
