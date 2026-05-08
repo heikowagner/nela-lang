@@ -1,0 +1,125 @@
+-- NELA v0.5 — Wolfenstein raycaster (pure integer, angle-based)
+--
+-- Coordinate system:
+--   Positions: fixed-point, 1 cell = 64 units.
+--   Angles:    0..359 degrees.
+--   angle 0   → facing south  (+y)
+--   angle 90  → facing east   (+x)
+--   angle 180 → facing north  (-y)
+--   angle 270 → facing west   (-x)
+--
+-- Trig tables (Python harness wolf_player.py):
+--   sin_tab[a] = round(sin(deg(a)) * 64)    a in 0..359
+--   cos_tab[a] = round(cos(deg(a)) * 64)
+--
+-- State: [px, py, angle]   (px,py in fixed-point units)
+
+-- ── Utilities ─────────────────────────────────────────────────────────────────
+
+-- O(1) list index via built-in drop + head (no NELA recursion)
+def get_nth lst n = head (drop n lst)
+
+-- Normalize angle to [0, 359]
+def norm_angle a =
+  if a >= 360 then norm_angle (a - 360)
+  else if a < 0 then norm_angle (a + 360)
+  else a
+
+-- ── Map primitives ────────────────────────────────────────────────────────────
+
+def map_get map idx = head (drop idx map)
+
+-- 1 if cell (x,y) is a wall, 0 if passable
+def is_wall map x y w = map_get map (x + y * w)
+
+-- ── State accessors  state = [px, py, angle] ─────────────────────────────────
+
+def state_px    state = get_nth state 0
+def state_py    state = get_nth state 1
+def state_angle state = get_nth state 2
+
+-- ── Fixed-point ray marcher ───────────────────────────────────────────────────
+--
+-- Ray starts at (rx, ry) in fixed-point units.
+-- Steps by (dx, dy) each iteration.
+-- dx = sin_tab[a] / 8,  dy = cos_tab[a] / 8  → ~8 fp-units per step.
+-- Returns number of steps until wall cell is entered.
+-- Returns 512 if limit exhausted (no wall found — should not occur on walled map).
+
+def ray_march map w rx ry dx dy limit =
+  if limit == 0 then 512
+  else
+    let cx = rx / 64 in
+    let cy = ry / 64 in
+    if is_wall map cx cy w == 1 then 0
+    else 1 + ray_march map w (rx + dx) (ry + dy) dx dy (limit - 1)
+
+-- ── Single column rendering ───────────────────────────────────────────────────
+--
+-- Returns wall height in screen rows for the given ray angle.
+-- height = 168 / (dist + 1)  →  ~21 rows at 1 cell away, ~3 rows at 6 cells.
+
+def render_col map w sin_tab cos_tab px py ray_angle =
+  let a    = norm_angle ray_angle in
+  let dx   = get_nth sin_tab a / 8 in
+  let dy   = get_nth cos_tab a / 8 in
+  let dist = ray_march map w px py dx dy 512 in
+  168 / (dist + 1)
+
+-- ── All columns (col_idx starts at 0) ────────────────────────────────────────
+--
+-- Returns list of ncols wall heights.
+-- ray_angle for column i = angle - half_fov + i
+
+def render_cols map w sin_tab cos_tab px py angle half_fov ncols col_idx =
+  if col_idx == ncols then []
+  else
+    let ray_angle = angle - half_fov + col_idx in
+    let h = render_col map w sin_tab cos_tab px py ray_angle in
+    h :: render_cols map w sin_tab cos_tab px py angle half_fov ncols (col_idx + 1)
+
+-- ── Movement with collision detection ────────────────────────────────────────
+
+-- Try to move to (nx, ny); revert to (old_px, old_py) if wall.
+def try_move map w nx ny old_px old_py angle =
+  let cx = nx / 64 in
+  let cy = ny / 64 in
+  if is_wall map cx cy w == 1
+  then old_px :: old_py :: angle :: []
+  else nx :: ny :: angle :: []
+
+-- Move forward by speed fp-units along current facing direction.
+def move_forward map w sin_tab cos_tab state speed =
+  let px = state_px    state in
+  let py = state_py    state in
+  let a  = state_angle state in
+  let dx = get_nth sin_tab a * speed / 64 in
+  let dy = get_nth cos_tab a * speed / 64 in
+  try_move map w (px + dx) (py + dy) px py a
+
+-- Move backward by speed fp-units.
+def move_back map w sin_tab cos_tab state speed =
+  let px = state_px    state in
+  let py = state_py    state in
+  let a  = state_angle state in
+  let dx = get_nth sin_tab a * speed / 64 in
+  let dy = get_nth cos_tab a * speed / 64 in
+  try_move map w (px - dx) (py - dy) px py a
+
+-- Rotate by delta degrees (positive = clockwise, negative = counter-clockwise).
+def turn state delta =
+  let px = state_px    state in
+  let py = state_py    state in
+  let a  = state_angle state in
+  px :: py :: norm_angle (a + delta) :: []
+
+-- ── Game update ───────────────────────────────────────────────────────────────
+--
+-- key: 0 = forward   1 = backward   2 = turn-left   3 = turn-right
+
+def update state key map w sin_tab cos_tab =
+  if key == 0 then move_forward map w sin_tab cos_tab state 32
+  else if key == 1 then move_back  map w sin_tab cos_tab state 32
+  else if key == 2 then turn state (-5)
+  else if key == 3 then turn state 5
+  else state
