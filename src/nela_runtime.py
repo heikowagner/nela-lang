@@ -86,6 +86,9 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
     if op == "mul":
         return eval_expr(expr["l"], env, defs) * eval_expr(expr["r"], env, defs)
 
+    if op == "div":
+        return eval_expr(expr["l"], env, defs) // eval_expr(expr["r"], env, defs)
+
     if op == "eq":
         return eval_expr(expr["l"], env, defs) == eval_expr(expr["r"], env, defs)
 
@@ -342,10 +345,91 @@ if __name__ == "__main__":
         for label, prog in vm_cases
     )
 
-    all_pass = qs_pass and ms_pass and vm_pass
+    # ── Wolf Grid tests ────────────────────────────────────────────────────────
+    # 5x5 map:  1=wall  0=passable
+    #   1 1 1 1 1
+    #   1 0 0 0 1
+    #   1 0 1 0 1   <- centre wall at (2,2)
+    #   1 0 0 0 1
+    #   1 1 1 1 1
+    WOLF_MAP = [
+        1,1,1,1,1,
+        1,0,0,0,1,
+        1,0,1,0,1,
+        1,0,0,0,1,
+        1,1,1,1,1,
+    ]
+    W = 5
+
+    def py_map_get(m, idx):           return m[idx]
+    def py_is_wall(m, x, y, w):       return m[x + y * w]
+    def py_cast_ray(m, x, y, dx, dy, w):
+        steps = 0
+        while m[x + y * w] != 1:
+            x += dx; y += dy; steps += 1
+        return steps
+    def py_wall_height(dist):         return 19200 if dist == 0 else 19200 // dist
+    def py_scan_4(m, px, py, w):
+        return [py_cast_ray(m, px, py, dx, dy, w)
+                for dx, dy in [(1,0),(0,1),(-1,0),(0,-1)]]
+    def py_reachable(m, sx, sy, gx, gy, w):
+        from collections import deque
+        visited = set(); q = deque([(sx, sy)])
+        while q:
+            x, y = q.popleft()
+            if (x, y) == (gx, gy): return 1
+            if (x, y) in visited or m[x + y * w] == 1: continue
+            visited.add((x, y))
+            for dx, dy in [(1,0),(0,1),(-1,0),(0,-1)]:
+                q.append((x+dx, y+dy))
+        return 0
+
+    wolf_cases = [
+        # (fn, py_fn, args, label)
+        ("map_get",    lambda _: py_map_get(WOLF_MAP, 0),           [WOLF_MAP, 0],        "map_get idx=0 (corner wall)"),
+        ("map_get",    lambda _: py_map_get(WOLF_MAP, 6),           [WOLF_MAP, 6],        "map_get idx=6 (open cell)"),
+        ("is_wall",    lambda _: py_is_wall(WOLF_MAP, 0, 0, W),     [WOLF_MAP,0,0,W],     "is_wall (0,0)=wall"),
+        ("is_wall",    lambda _: py_is_wall(WOLF_MAP, 1, 1, W),     [WOLF_MAP,1,1,W],     "is_wall (1,1)=open"),
+        ("is_wall",    lambda _: py_is_wall(WOLF_MAP, 2, 2, W),     [WOLF_MAP,2,2,W],     "is_wall (2,2)=centre wall"),
+        ("cast_ray",   lambda _: py_cast_ray(WOLF_MAP, 1,1, 1, 0,W),[WOLF_MAP,1,1,1,0,W], "ray right from (1,1)"),
+        ("cast_ray",   lambda _: py_cast_ray(WOLF_MAP, 1,1, 0, 1,W),[WOLF_MAP,1,1,0,1,W], "ray down from (1,1)"),
+        ("cast_ray",   lambda _: py_cast_ray(WOLF_MAP, 1,1,-1, 0,W),[WOLF_MAP,1,1,-1,0,W],"ray left from (1,1)"),
+        ("cast_ray",   lambda _: py_cast_ray(WOLF_MAP, 1,1, 0,-1,W),[WOLF_MAP,1,1,0,-1,W],"ray up from (1,1)"),
+        ("cast_ray",   lambda _: py_cast_ray(WOLF_MAP, 3,1, 1, 0,W),[WOLF_MAP,3,1,1,0,W], "ray right from (3,1) 1 step"),
+        ("wall_height",lambda _: py_wall_height(3),                 [3],                  "wall_height dist=3"),
+        ("wall_height",lambda _: py_wall_height(1),                 [1],                  "wall_height dist=1"),
+        ("scan_4",     lambda _: py_scan_4(WOLF_MAP, 1,1, W),       [WOLF_MAP,1,1,W],     "scan_4 from (1,1)"),
+        ("scan_4",     lambda _: py_scan_4(WOLF_MAP, 3,3, W),       [WOLF_MAP,3,3,W],     "scan_4 from (3,3)"),
+        ("reachable",  lambda _: py_reachable(WOLF_MAP,1,1,3,3,W),  [WOLF_MAP,1,1,3,3,W], "reachable (1,1)->(3,3)"),
+        ("reachable",  lambda _: 0,                                 [WOLF_MAP,1,1,2,2,W], "reachable (1,1)->(2,2) wall=0"),
+        ("reachable",  lambda _: py_reachable(WOLF_MAP,1,1,1,3,W),  [WOLF_MAP,1,1,1,3,W], "reachable (1,1)->(1,3) open"),
+    ]
+
+    def run_wolf_test(prog, fn, py_fn, args, label):
+        print(f"\n{'='*55}")
+        print(f"[wolf: {label}]")
+        py_result   = py_fn(None)
+        nela_result = run_program(prog, fn, *args)
+        ok = py_result == nela_result
+        print(f"  Reference: {py_result}")
+        print(f"  NELA:      {nela_result}")
+        print(f"  Match:     {'PASS' if ok else 'FAIL'}")
+        return ok
+
+    print("\n" + "#"*55)
+    print("# WOLF GRID")
+    print("#"*55)
+    wolf_prog = _load("wolf_grid.nela")
+    wolf_pass = all(
+        run_wolf_test(wolf_prog, fn, py_fn, args, label)
+        for fn, py_fn, args, label in wolf_cases
+    )
+
+    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass
     print(f"\n{'='*55}")
     print(f"Quicksort:  {'PASS' if qs_pass else 'FAIL'}")
     print(f"Mergesort:  {'PASS' if ms_pass else 'FAIL'}")
     print(f"Stack VM:   {'PASS' if vm_pass else 'FAIL'}")
+    print(f"Wolf Grid:  {'PASS' if wolf_pass else 'FAIL'}")
     print(f"Overall:    {'ALL TESTS PASSED' if all_pass else 'SOME TESTS FAILED'}")
     sys.exit(0 if all_pass else 1)

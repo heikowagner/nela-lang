@@ -33,7 +33,7 @@ _TOKEN_RE = re.compile(r"""
     ::                 |   # cons operator
     \+\+               |   # append operator
     <=  | >=  | ==     |   # two-char comparisons
-    [+\-*<>]           |   # single-char operators
+    [+\-*/<>]          |   # single-char operators
     [()|\[\],=]        |   # punctuation
     -?\d+              |   # integer literal
     [A-Za-z_][A-Za-z_0-9']*  # identifier / keyword
@@ -574,10 +574,10 @@ def _parse_add(ts):
 
 def _parse_mul(ts):
     left = _parse_apply(ts)
-    while ts.at("*"):
-        ts.eat()
+    while ts.peek() in ("*", "/"):
+        op_tok = ts.eat()
         right = _parse_apply(ts)
-        left = {"op": "mul", "l": left, "r": right}
+        left = {"op": "mul" if op_tok == "*" else "div", "l": left, "r": right}
     return left
 
 

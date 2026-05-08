@@ -1,0 +1,108 @@
+-- NELA 0.4 — Wolfenstein grid engine (pure integer subset)
+-- Source: github.com/maksimKorzh/wolfenstein-pygame (pure functions extracted)
+--
+-- What runs in v0.4 (this file):
+--   map as flat integer list, O(n) index lookup
+--   discrete DDA wall detection (no trig)
+--   projected wall height (integer approximation)
+--   4-direction scan returning list of distances
+--   BFS reachability check
+--
+-- Needs v0.5 (blocked — see README roadmap):
+--   float literals + sin/cos/sqrt  →  real angle-based ray direction
+--   char / atom type               →  tile type chars ('S','B',' ')
+--   IOToken (linear IO)            →  mutable player pos, door state
+--   Array with O(1) index          →  replace O(n) drop/head map lookup
+--   neg integer literals           →  write -1 instead of (0 - 1)
+
+-- ── Map primitives ────────────────────────────────────────────────────────────
+
+-- Access cell at linear index in flat grid list
+-- v0.5: replace with O(1) Array lookup
+def map_get map idx = head (drop idx map)
+
+-- 1 if cell (x,y) is a wall, 0 if passable
+-- w = grid width
+def is_wall map x y w = map_get map (x + y * w)
+
+-- ── Discrete DDA raycaster ────────────────────────────────────────────────────
+
+-- Cast a ray from (x,y) stepping by (dx,dy) until hitting a wall.
+-- Returns distance in grid steps to first wall cell.
+-- v0.5: replace dx/dy integer steps with real angle + sin/cos offsets
+def cast_ray map x y dx dy w =
+  if is_wall map x y w == 1
+  then 0
+  else 1 + cast_ray map (x + dx) (y + dy) dx dy w
+
+-- Projected wall height in pixels.
+-- Approximates: MAP_SCALE(64) * screen_dist(300) / depth = 19200 / dist
+-- v0.5: multiply by cos(player_angle - ray_angle) to fix fisheye distortion
+def wall_height dist =
+  if dist == 0 then 19200
+  else 19200 / dist
+
+-- Cast rays in all 4 cardinal directions from (px,py).
+-- Returns [right, down, left, up] distances.
+def scan_4 map px py w =
+  cast_ray map px py 1 0 w ::
+  cast_ray map px py 0 1 w ::
+  cast_ray map px py (0 - 1) 0 w ::
+  cast_ray map px py 0 (0 - 1) w ::
+  []
+
+-- ── BFS reachability ─────────────────────────────────────────────────────────
+
+-- Check if integer n is in list
+def mem n lst =
+  match lst
+  | []    = 0
+  | h::t  = if h == n then 1 else mem n t
+
+-- Encode (x,y) as single integer: x + y * w
+def encode x y w = x + y * w
+
+-- Expand passable neighbours of cell (x,y), appending to acc
+-- Skips cells already in visited list
+def expand map x y w visited acc =
+  let r  = encode (x + 1) y       w in
+  let d  = encode x       (y + 1) w in
+  let l  = encode (x - 1) y       w in
+  let u  = encode x       (y - 1) w in
+  let a1 = if is_wall map (x + 1) y       w == 0 then
+             if mem r visited == 0 then r :: acc else acc
+           else acc in
+  let a2 = if is_wall map x       (y + 1) w == 0 then
+             if mem d visited == 0 then d :: a1 else a1
+           else a1 in
+  let a3 = if is_wall map (x - 1) y       w == 0 then
+             if mem l visited == 0 then l :: a2 else a2
+           else a2 in
+  let a4 = if is_wall map x       (y - 1) w == 0 then
+             if mem u visited == 0 then u :: a3 else a3
+           else a3 in
+  a4
+
+-- BFS step: process one level of queue
+-- queue: list of encoded positions yet to visit
+-- visited: list of encoded positions already seen
+-- goal: encoded target position
+-- Returns 1 if goal found, 0 if queue exhausted
+def bfs map w queue visited goal =
+  match queue
+  | []   = 0
+  | h::t =
+    if h == goal then 1
+    else
+      let x        = h - (h / w) * w in
+      let y        = h / w            in
+      let new_vis  = h :: visited     in
+      let new_q    = expand map x y w new_vis t in
+      bfs map w new_q new_vis goal
+
+-- Is cell (gx,gy) reachable from (sx,sy)?
+-- Returns 1 if reachable, 0 otherwise
+def reachable map sx sy gx gy w =
+  let start = encode sx sy w in
+  let goal  = encode gx gy w in
+  bfs map w (start :: []) [] goal

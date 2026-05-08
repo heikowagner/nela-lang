@@ -86,7 +86,42 @@ Input:  [20, 19, ..., 1]       (20 elements)
 Output: [1, 2, ..., 20]        ✓
 ```
 
-### Stack VM — `examples/stack_vm.nela`
+### Wolf Grid — `examples/wolf_grid.nela`
+
+Pure integer raycasting engine, ported from
+[`maksimKorzh/wolfenstein-pygame`](https://github.com/maksimKorzh/wolfenstein-pygame).
+Demonstrates applying NELA to a real game codebase. The portables run now; the blocked items
+define the v0.5 language roadmap.
+
+**What runs in v0.4:**
+
+| Function | Logic |
+|---|---|
+| `map_get map idx` | Index into flat integer grid list via `head (drop idx map)` |
+| `is_wall map x y w` | Wall check: `map_get map (x + y * w)` |
+| `cast_ray map x y dx dy w` | Discrete DDA: step `(dx,dy)` until hitting a wall, return step count |
+| `wall_height dist` | Projected height: `19200 / dist` (integer approx of `MAP_SCALE × 300 / depth`) |
+| `scan_4 map px py w` | Cast in ±x, ±y directions; return `[right, down, left, up]` distances |
+| `reachable map sx sy gx gy w` | BFS on grid; returns 1 if open path exists, 0 otherwise |
+
+```
+scan_4 map 1 1 5  →  [3, 3, 1, 1]   (open corridor right/down, wall left/up)
+```
+
+**Blocked — v0.5 requirements:**
+
+| Blocker | Needed for | Language feature |
+|---|---|---|
+| `sin`/`cos`/`sqrt` | Real angle-based ray direction | `float` type + trig builtins |
+| Tile chars `'S'`,`'B'`,`' '` | Typed map cells | `char` / `atom` type |
+| `player_x += ...` | Mutable player state | `IOToken` linear I/O threading |
+| `MAP[i] = ' '` | Openable doors | `IOToken` + mutable array |
+| `O(1)` map lookup | Performance | `Array` type (replace `drop`/`head`) |
+| `pygame.blit`, `display.flip` | Rendering | FFI or native output ops |
+
+---
+
+
 
 A complete stack-based virtual machine — the same execution model as CPython, the JVM, and
 WebAssembly. Two functions: `vm_run` (recursive execution loop) and `vm_eval` (entry point).
@@ -246,3 +281,19 @@ their rewrite rules are actually specified.
 | `"a": [Expr]` for all function arguments | Uniform; supports single-arg and multi-arg functions identically |
 | Lists are Python lists internally | Avoids a spurious cons-cell heap; the formal `Cons`/`Nil` ADT is the semantic model, Python list is the runtime carrier |
 | `else_` (with underscore) for else branch | Avoids collision with Python `else` keyword in dicts |
+
+---
+
+## v0.5 Roadmap
+
+Derived from the Wolfenstein port — each row is a concrete blocker with a clear theoretical grounding.
+
+| Feature | Motivation | Theory |
+|---|---|---|
+| `float` literals + `sin`/`cos`/`sqrt`/`atan2` | Real angle-based raycasting; any physics | Add `Float` base type alongside `Int`; trig builtins as primitive agents |
+| `char` / `atom` type | Tile chars (`'S'`, `'B'`, `' '`); string keys | Tagged integer or interned symbol; fits `⊕` sum type in NELA-C |
+| `IOToken` linear I/O | Mutable player position, door state, rendering | `IO(A)` type from Linear Logic; token stays linear to enforce sequencing |
+| `Array n A` with O(1) index | Replace `drop`/`head` O(n) map lookup | Sigma type `Σ(i:Fin n). A` in dependent type layer; compiler maps to mutable buffer |
+| `neg` integer literals | Write `-1` in source instead of `(0 - 1)` | Trivial tokenizer extension |
+| Multi-element list literals `[a, b, c, d]` | Inline init of maps, direction tables | Parser sugar; desugars to `a :: b :: c :: d :: []` |
+
