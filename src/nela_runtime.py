@@ -1,5 +1,5 @@
 """
-NELA Runtime v0.8 — surface language interpreter.
+NELA Runtime v0.9 — surface language interpreter.
 
 The NELA surface language is ML/Haskell-like syntax (.nela files).
 nela_parser.py converts .nela source text into the dict AST evaluated here.
@@ -12,12 +12,31 @@ Supported ops:
   add, sub, mul, div, mod, neg,
   sin, cos, sqrt, floor, ceil, round, abs, ord, chr,
   eq, lt, le, gt, ge, and, or, not,
-  filter, append
+  filter, append,
+  io_key, io_print
 """
 
 import json, math, sys, time
 from typing import Any
 from nela_parser import parse_program, parse_file
+
+
+# ── IOToken — linear I/O resource (v0.9) ───────────────────────────────────
+
+class IOToken:
+    """Linear I/O token threaded through NELA-S I/O operations.
+
+    By convention (enforced by the future linear type checker), each
+    io_key / io_print call consumes this token and returns a fresh one.
+    The Python harness creates the initial token; NELA-S holds it thereafter.
+    """
+    def __init__(self, read_key, print_frame):
+        self.read_key    = read_key      # () -> str (single char)
+        self.print_frame = print_frame   # (list[list[int]]) -> None
+
+    def _fresh(self):
+        """Return a logically fresh token (linearity by convention)."""
+        return IOToken(self.read_key, self.print_frame)
 
 
 # ── Interpreter ────────────────────────────────────────────────────────────────
@@ -184,6 +203,20 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
         v   = eval_expr(expr["v"], env, defs)
         lst[i] = v
         return lst
+
+    # ── IOToken builtins (v0.9) ─────────────────────────────────────────────────────
+    # io_key token  →  (char, token')   — linear: consumes token
+    if op == "io_key":
+        token = eval_expr(expr["e"], env, defs)
+        ch    = token.read_key()
+        return (ch, token._fresh())
+
+    # io_print frame token  →  token'   — linear: consumes token
+    if op == "io_print":
+        frame = eval_expr(expr["l"], env, defs)
+        token = eval_expr(expr["r"], env, defs)
+        token.print_frame(frame)
+        return token._fresh()
 
     if op == "and":
         return eval_expr(expr["l"], env, defs) and eval_expr(expr["r"], env, defs)
@@ -630,7 +663,84 @@ def get_after  a = get (aset a 1 9) 1
     print("#"*55)
     v8_pass = all(run_v8_test(lbl, fn, exp) for lbl, fn, exp in v8_cases)
 
-    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass and wg_pass and v7_pass and v8_pass
+    # ── v0.9 tests: IOToken linear I/O ────────────────────────────────────────
+    # Mock IOToken replays a fixed key sequence then returns 'q' (quit).
+    class _MockToken:
+        def __init__(self, keys):
+            self._keys   = list(keys) + ["q"]
+            self._idx    = 0
+            self.printed = []           # frames passed to print_frame
+        def read_key(self):
+            ch = self._keys[self._idx]; self._idx += 1; return ch
+        def print_frame(self, frame):
+            self.printed.append(frame)
+        def _fresh(self):
+            return self   # single shared mock token; linearity by convention
+
+    _v9_src = """\
+def io_key_char token =
+  let p = io_key token in
+  fst p
+
+def io_key_tok token =
+  let p = io_key token in
+  snd p
+
+def print_and_return frame token =
+  io_print frame token
+"""
+    _v9_prog = parse_program(_v9_src)
+
+    def _run_v9_key_char(keys):
+        tok = _MockToken(keys)
+        return run_program(_v9_prog, "io_key_char", tok)
+
+    def _run_v9_print_count(frame, keys):
+        tok = _MockToken(keys)
+        run_program(_v9_prog, "print_and_return", frame, tok)
+        return len(tok.printed)
+
+    def _run_v9_game_loop(keys):
+        tok = _MockToken(keys)
+        run_program(wg_game_prog, "game_loop",
+                    list(_INIT_STATE_V9), list(MAP8), W8, tok)
+        return len(tok.printed)
+
+    _INIT_STATE_V9 = [1.5, 1.5, 90]
+
+    v9_cases = [
+        ("io_key returns first char",
+         lambda: _run_v9_key_char(["w"]),              "w"),
+        ("io_key returns 'q'",
+         lambda: _run_v9_key_char(["q"]),              "q"),
+        ("io_print side-effect fires",
+         lambda: _run_v9_print_count([[0, 1], [2, 3]], []),  1),
+        ("game_loop immediate quit: 1 frame",
+         lambda: _run_v9_game_loop([]),                1),
+        ("game_loop fwd then quit: 2 frames",
+         lambda: _run_v9_game_loop(["w"]),             2),
+        ("game_loop turn-right then quit: 2 frames",
+         lambda: _run_v9_game_loop(["d"]),             2),
+        ("game_loop door then quit: 2 frames",
+         lambda: _run_v9_game_loop(["e"]),             2),
+    ]
+
+    def run_v9_test(label, got_fn, expected):
+        print(f"\n{'='*55}")
+        print(f"[v9: {label}]")
+        got = got_fn()
+        ok  = got == expected
+        print(f"  Expected:  {expected!r}")
+        print(f"  NELA:      {got!r}")
+        print(f"  Match:     {'PASS' if ok else 'FAIL'}")
+        return ok
+
+    print("\n" + "#"*55)
+    print("# V0.9 (IOToken: io_key / io_print / game_loop)")
+    print("#"*55)
+    v9_pass = all(run_v9_test(lbl, fn, exp) for lbl, fn, exp in v9_cases)
+
+    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass and wg_pass and v7_pass and v8_pass and v9_pass
     print(f"\n{'='*55}")
     print(f"Quicksort:  {'PASS' if qs_pass else 'FAIL'}")
     print(f"Mergesort:  {'PASS' if ms_pass else 'FAIL'}")
@@ -639,6 +749,7 @@ def get_after  a = get (aset a 1 9) 1
     print(f"Wolf Game:  {'PASS' if wg_pass else 'FAIL'}")
     print(f"V0.7:       {'PASS' if v7_pass else 'FAIL'}")
     print(f"V0.8:       {'PASS' if v8_pass else 'FAIL'}")
+    print(f"V0.9:       {'PASS' if v9_pass else 'FAIL'}")
     print(f"Overall:    {'ALL TESTS PASSED' if all_pass else 'SOME TESTS FAILED'}")
     sys.exit(0 if all_pass else 1)
 

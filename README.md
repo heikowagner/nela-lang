@@ -105,7 +105,7 @@ Discrete DDA (cardinal directions), BFS reachability, no trig needed.
 scan_4 map 1 1 5  →  [3, 3, 1, 1]   (open corridor right/down, wall left/up)
 ```
 
-### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.8 — playable, doors)*
+### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.9 — full game loop in NELA-S)*
 
 Fully playable Wolfenstein raycaster. **All game logic is pure NELA-S.** Python is strictly I/O:
 raw keyboard and `print`. Zero precomputed data — no trig tables, no constants.
@@ -129,6 +129,8 @@ State: `[px, py, angle]` where `px`, `py` are floats.
 | `turn state delta` | Rotate by delta degrees; normalise |
 | `update state key map w` | Dispatch on key 0–3 → new state (no trig table args) |
 | `use_door state map w` | Step 1 cell in facing direction; `aset map idx 0` if wall, else noop |
+| `key_action c` | Maps char → action code (0=fwd, 1=back, 2=left, 3=right, 4=door, 5=quit) |
+| `game_loop state map w token` | Full IOToken loop: io_print → io_key → update → recurse until quit |
 
 **Run the game:** `cd src && python3 wolf_player.py`  (W/S = move, A/D = turn, Q = quit)
 
@@ -227,10 +229,11 @@ Expected output:
 # WOLF GAME    14/14 PASS
 # V0.7         15/15 PASS
 # V0.8          9/9  PASS
+# V0.9          7/7  PASS
 Overall: ALL TESTS PASSED
 ```
 
-85 total test cases. Requires Python 3.10+. No external dependencies.
+92 total test cases. Requires Python 3.10+. No external dependencies.
 
 ---
 
@@ -361,12 +364,23 @@ Array builtins (`array`, `aset`, `len`) and live map mutation via `use_door`.
 | `aset arr i v` builtin | ✅ done | Functional update: returns copy with `arr[i] = v` |
 | `len arr` builtin | ✅ done | `len [1,2,3]` → `3` |
 | `use_door state map w` | ✅ done | Steps 1 cell forward; opens (sets 0) wall tile if present |
-| `'E'` key in wolf_player.py | ✅ done | Calls `use_door`; `map_data` is a mutable local copy |
 
-## v0.9 Roadmap
+## v0.9 — Completed
+
+IOToken linear I/O. The entire game loop is now pure NELA-S.
+
+| Feature | Status | Notes |
+|---|---|---|
+| `io_key token` builtin | ✅ done | Reads one keypress; returns `(char, token')` pair; linear: consumes token |
+| `io_print frame token` builtin | ✅ done | Calls Python print callback; returns `token'`; linear: consumes token |
+| `IOToken` class in runtime | ✅ done | Wraps `read_key` + `print_frame` callbacks; `.fresh()` produces successor token |
+| `key_action c` in wolf_game.nela | ✅ done | Maps char → action code in NELA-S (was Python dict) |
+| `game_loop` in wolf_game.nela | ✅ done | Full recurse-until-quit loop in NELA-S; Python harness reduced to 2 lines |
+| wolf_player.py mission compliance | ✅ done | Python provides only: 2 callbacks + `IOToken(...)` + `run_program(...)` |
+
+## v0.10 Roadmap
 
 | Feature | Motivation | Theory |
 |---|---|---|
-| `IOToken` linear I/O | Mutable state, sequenced side effects | `IO(A)` from Linear Logic; linear token enforces ordering |
 | NELA-C compiler | Formal verification + optimal parallel reduction | Interaction net graph; lowers NELA-S → NELA-C |
 

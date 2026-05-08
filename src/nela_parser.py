@@ -1,5 +1,5 @@
 """
-NELA Parser v0.8 — ML-style surface syntax
+NELA Parser v0.9 — ML-style surface syntax
 
 Grammar (informal):
   Program  ::= Def+
@@ -612,7 +612,7 @@ def _parse_unary(ts):
 
 _BUILTIN_UNARY = {"head", "tail", "fst", "snd", "not",
                    "sin", "cos", "sqrt", "floor", "ceil", "round", "abs",
-                   "ord", "chr", "len"}
+                   "ord", "chr", "len", "io_key"}
 _BUILTIN_BINARY = {"take", "drop", "append", "filter", "get", "array", "aset"}
 
 
@@ -637,6 +637,9 @@ def _parse_apply(ts):
                 return {"op": "array", "n": args[0], "v": args[1]}
             if name == "aset" and len(args) == 3:
                 return {"op": "aset", "e": args[0], "n": args[1], "v": args[2]}
+            # io_print frame token — linear I/O print (v0.9)
+            if name == "io_print" and len(args) == 2:
+                return {"op": "io_print", "l": args[0], "r": args[1]}
             return {"op": "call", "fn": name, "a": args}
         raise SyntaxError(f"Application of non-name {func!r}")
     return func

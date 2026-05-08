@@ -1,11 +1,17 @@
--- NELA v0.8 — Wolfenstein raycaster + mutable map (array/aset)
+-- NELA v0.9 — Wolfenstein raycaster + IOToken linear game loop
+--
+-- v0.9 vs v0.8:
+--   + io_key token        — read a keypress through a linear I/O token
+--   + io_print frame tok  — print a frame, return new token
+--   + key_action c        — map char → action code (NELA-S, not Python)
+--   + game_loop state map w token  — full game loop in NELA-S
+--   Python harness now only provides: _getch callback, _print_frame callback
 --
 -- v0.8 vs v0.7:
 --   + array n v  — create list of n elements all equal to v
 --   + aset arr i v  — functional update: return new list with index i set to v
 --   + len arr    — list length
 --   + use_door state map w  — open the wall directly in front of the player
---   State is still [px, py, angle]; map is passed/returned separately.
 --
 -- Coordinate system:
 --   Positions: float, 1 unit = 1 grid cell.
@@ -171,20 +177,41 @@ def use_door state map w =
   then aset map (tx + ty * w) 0
   else map
 
--- ── Door / cell mutation (v0.8) ──────────────────────────────────────────────
+-- ── Key mapping (v0.9) ──────────────────────────────────────────────────────
 --
--- Open (remove) the wall cell directly in front of the player.
--- Returns the updated map.  Caller stores the new map alongside state.
--- 'e' key in wolf_player.py triggers this; non-wall cells are a no-op.
+-- Maps raw char → action code:
+--   0 = forward  1 = backward  2 = turn-left  3 = turn-right
+--   4 = door     5 = quit      6 = unknown
 
-def use_door state map w =
-  let px  = state_px    state in
-  let py  = state_py    state in
-  let a   = state_angle state in
-  let rad = deg_to_rad a in
-  let tx  = floor (px + sin rad) in
-  let ty  = floor (py + cos rad) in
-  if is_wall map tx ty w == 1
-  then aset map (tx + ty * w) 0
-  else map
+def key_action c =
+  if c == 'w' then 0
+  else if c == 'W' then 0
+  else if c == 's' then 1
+  else if c == 'S' then 1
+  else if c == 'a' then 2
+  else if c == 'A' then 2
+  else if c == 'd' then 3
+  else if c == 'D' then 3
+  else if c == 'e' then 4
+  else if c == 'E' then 4
+  else if c == 'q' then 5
+  else if c == 'Q' then 5
+  else 6
 
+-- ── IOToken-based game loop (v0.9) ───────────────────────────────────────────
+--
+-- token is a linear I/O resource.  Each io_key / io_print consumes it and
+-- returns a fresh token.  The loop terminates when key_action returns 5 (quit).
+
+def game_loop state map w token =
+  let frame  = render_frame map w (get state 0) (get state 1) (get state 2) 20 40 21 in
+  let tok1   = io_print frame token in
+  let kpair  = io_key tok1 in
+  let c      = fst kpair in
+  let tok2   = snd kpair in
+  let action = key_action c in
+  if action == 5 then tok2
+  else
+    let map2   = if action == 4 then use_door state map w else map in
+    let state2 = if action <= 3 then update state action map w else state in
+    game_loop state2 map2 w tok2
