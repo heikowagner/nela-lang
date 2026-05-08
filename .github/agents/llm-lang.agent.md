@@ -144,22 +144,31 @@ Keyboard capture (_getch)         ──→    key_action(c)           [c → ac
        ↓                                         ↓
 Frame rendering (_print_frame)   ←──     game_loop(state, map, w, token)
                                           Computes:
-                                          • Raycasting (render_frame)
-                                          • State update (move, turn, use_door)
-                                          • Score tracking (doors_opened, steps)
-                                          • Minimap computation (minimap_row)
+                                          • Raycasting (render_frame) ✅ pure recursion, bounded
+                                          • State update (move, turn, use_door) ✅ simple
+                                          • Score tracking (doors_opened, steps) ✅ counters
+                                          • Minimap computation (minimap_row) ✅ grid iteration
                                           
                                           Output: [frame, doors_count, steps, minimap]
+                                          
+                                          Future work:
+                                          • Enemy movement AI (requires careful recursion design)
+                                          • Health system (can compile to C for efficiency)
 ```
 
 **Key properties:**
-- `game_loop(state, map, w, token)` is **pure NELA-S**, not Python
-- All game logic compiles to interaction nets (NELA-C) for formal verification
-- Python never computes game state — it only renders what NELA produces
-- Score, stats, and UI layout are computed in NELA-S, not Python
+- `game_loop(state, map, w, token)` is **pure NELA-S**, not Python ✅
+- All game logic compiles to interaction nets (NELA-C) for formal verification ✅
+- Python never computes game state — it only renders what NELA produces ✅
+- Score, stats, and UI layout are computed in NELA-S, not Python ✅
 
 **Minimap design:** 8×8 grid represented as flat list of length 64, where each cell is `0=open`, `1=wall`, `2=player-here`.
-Computed cleanly in NELA-S using functional map update with pattern matching.
+Computed cleanly in NELA-S using functional map update with pattern matching. ✅
+
+**Design trade-offs:**
+- **Works perfectly:** Bounded recursion (raycasting, grid iteration), functional state updates, pure logic flows
+- **Requires design care:** Complex recursion (pathfinding AI) can hit Python interpreter limits; use C bytecode path for efficiency
+- **Lesson learned:** NELA-S excels at **logic that's bounded, pure, and parallelizable**; dynamic AI may need structural optimization
 
 ---
 
