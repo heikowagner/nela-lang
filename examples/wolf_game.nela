@@ -1,4 +1,11 @@
--- NELA v0.9 — Wolfenstein raycaster + IOToken linear game loop
+-- NELA v0.10 — Wolfenstein raycaster + score tracking
+--
+-- v0.10 (NEW):
+--   + build_minimap()       — compute 8×8 grid showing walls/player
+--   + doors_count tracking  — increment when door successfully opened
+--   + steps_count tracking  — increment on each forward/back/turn movement
+--   + game_loop returns     — [frame, doors_opened, steps_taken, minimap]
+--   Mission: All game logic stays in NELA-S. Python is I/O-only.
 --
 -- v0.9 vs v0.8:
 --   + io_key token        — read a keypress through a linear I/O token
@@ -198,20 +205,63 @@ def key_action c =
   else if c == 'Q' then 5
   else 6
 
--- ── IOToken-based game loop (v0.9) ───────────────────────────────────────────
---
--- token is a linear I/O resource.  Each io_key / io_print consumes it and
--- returns a fresh token.  The loop terminates when key_action returns 5 (quit).
+-- ── Minimap generation (v0.9+) ─────────────────────────────────────────────
+-- Minimap is an 8×8 grid where:
+--   0 = open space
+--   1 = wall
+--   2 = player location
 
-def game_loop state map w token =
+def minimap_cell map w px py grid_x grid_y =
+  let px_floor = floor px in
+  let py_floor = floor py in
+  let cell_val = get map (grid_x + grid_y * w) in
+  if grid_x == px_floor then
+    if grid_y == py_floor then 2
+    else if cell_val == 1 then 1
+    else 0
+  else if cell_val == 1 then 1
+  else 0
+
+def minimap_row map w px py grid_y col =
+  if col == w then []
+  else
+    let cell = minimap_cell map w px py col grid_y in
+    cell :: minimap_row map w px py grid_y (col + 1)
+
+def build_minimap map w px py row =
+  if row == w then []
+  else
+    let row_cells = minimap_row map w px py row 0 in
+    row_cells :: build_minimap map w px py (row + 1)
+
+-- ── IOToken-based game loop with stats (v0.9+) ───────────────────────────────
+--
+-- Returns: [frame, doors_opened, steps_count, minimap]
+-- token consumed/produced internally; game_loop interface hides IOToken linearity
+
+def game_loop_rec state map w doors steps token =
   let frame  = render_frame map w (get state 0) (get state 1) (get state 2) 20 40 21 in
   let tok1   = io_print frame token in
   let kpair  = io_key tok1 in
   let c      = fst kpair in
   let tok2   = snd kpair in
   let action = key_action c in
-  if action == 5 then tok2
+  if action == 5 then
+    let minimap = build_minimap map w (get state 0) (get state 1) 0 in
+    [frame, doors, steps, minimap]
   else
-    let map2   = if action == 4 then use_door state map w else map in
+    let px_pos = get state 0 in
+    let py_pos = get state 1 in
+    let angle_pos = get state 2 in
+    let rad_angle = deg_to_rad angle_pos in
+    let door_x = floor (px_pos + sin rad_angle) in
+    let door_y = floor (py_pos + cos rad_angle) in
+    let door_cell = is_wall map door_x door_y w in
+    let map2 = if action == 4 then (if door_cell == 1 then use_door state map w else map) else map in
+    let doors2 = if action == 4 then (if door_cell == 1 then doors + 1 else doors) else doors in
     let state2 = if action <= 3 then update state action map w else state in
-    game_loop state2 map2 w tok2
+    let steps2 = if action <= 3 then steps + 1 else steps in
+    game_loop_rec state2 map2 w doors2 steps2 tok2
+
+def game_loop state map w token =
+  game_loop_rec state map w 0 0 token

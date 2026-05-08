@@ -133,6 +133,36 @@ NELA-S.
 
 ---
 
+## Wolf Game Architecture (v0.9+) — All Logic in NELA-S
+
+The Wolf game is a complete case study in LLM-native design:
+
+```
+Python Harness (src/wolf_player.py)     NELA-S Logic (examples/wolf_game.nela)
+─────────────────────────────────────    ────────────────────────────────────
+Keyboard capture (_getch)         ──→    key_action(c)           [c → action code]
+       ↓                                         ↓
+Frame rendering (_print_frame)   ←──     game_loop(state, map, w, token)
+                                          Computes:
+                                          • Raycasting (render_frame)
+                                          • State update (move, turn, use_door)
+                                          • Score tracking (doors_opened, steps)
+                                          • Minimap computation (minimap_row)
+                                          
+                                          Output: [frame, doors_count, steps, minimap]
+```
+
+**Key properties:**
+- `game_loop(state, map, w, token)` is **pure NELA-S**, not Python
+- All game logic compiles to interaction nets (NELA-C) for formal verification
+- Python never computes game state — it only renders what NELA produces
+- Score, stats, and UI layout are computed in NELA-S, not Python
+
+**Minimap design:** 8×8 grid represented as flat list of length 64, where each cell is `0=open`, `1=wall`, `2=player-here`.
+Computed cleanly in NELA-S using functional map update with pattern matching.
+
+---
+
 ## Workflow
 
 ### Phase 1 — Specification
