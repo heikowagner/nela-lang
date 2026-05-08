@@ -123,3 +123,64 @@ def update state key map w sin_tab cos_tab =
   else if key == 2 then turn state (-5)
   else if key == 3 then turn state 5
   else state
+
+-- ── Frame assembly (pure NELA-S) ──────────────────────────────────────────────
+--
+-- shade_of h screen_h
+--   Returns an integer shade level for a wall column of height h:
+--     0 = ceiling   1 = floor   2 = wall-far   3 = wall-mid   4 = wall-close
+--   Python maps these integers to block characters; no logic in Python.
+
+def shade_of h screen_h =
+  let q3 = screen_h * 3 / 4 in
+  let q2 = screen_h / 2     in
+  if h >= q3 then 4
+  else if h >= q2 then 3
+  else 2
+
+-- frame_cell row col_h mid
+--   For a single cell in the frame, given:
+--     row    — current screen row (0-based, 0 = top)
+--     col_h  — wall height for this column (capped to screen_h by caller)
+--     mid    — screen_h / 2
+--     screen_h — total screen rows
+--   Returns shade integer (0–4).
+
+def frame_cell row col_h mid screen_h =
+  let half = col_h / 2 in
+  let dist = if row >= mid then row - mid else mid - row in
+  if dist <= half then shade_of col_h screen_h
+  else if row < mid then 0
+  else 1
+
+-- cap h limit — clamp h to at most limit
+
+def cap h limit =
+  if h > limit then limit else h
+
+-- frame_row heights row mid screen_h
+--   Returns one row of the frame as a list of shade integers.
+
+def frame_row heights row mid screen_h =
+  match heights
+  | [] = []
+  | h::t =
+    let ch = cap h screen_h in
+    frame_cell row ch mid screen_h :: frame_row t row mid screen_h
+
+-- make_frame heights screen_h row
+--   Returns the complete frame as a list of rows (list of lists).
+--   row starts at 0, recurses up to screen_h - 1.
+
+def make_frame heights screen_h row =
+  if row == screen_h then []
+  else
+    let mid = screen_h / 2 in
+    frame_row heights row mid screen_h :: make_frame heights screen_h (row + 1)
+
+-- render_frame: convenience — compute heights and assemble frame in one call.
+-- Returns list-of-rows, each row a list of shade integers (0=ceil,1=floor,2-4=wall).
+
+def render_frame map w sin_tab cos_tab px py angle half_fov ncols screen_h =
+  let heights = render_cols map w sin_tab cos_tab px py angle half_fov ncols 0 in
+  make_frame heights screen_h 0
