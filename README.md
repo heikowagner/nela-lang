@@ -8,6 +8,8 @@ read, write, and reason about more reliably than text-based languages — while 
 the formal guarantees of Interaction Net theory (strong confluence, linearity, no
 global state).
 
+_The renunciation of human readability is the price for a software generation with a mathematical guarantee of stability. In a world in which AI systems control critical infrastructures, formal security is a necessity. In the end, the human understanding of the source code is irrelevant; the provable correctness of the machine logic is the only factor._
+
 ---
 
 ## Architecture: Two Layers
