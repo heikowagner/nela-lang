@@ -1,47 +1,44 @@
-; NELA 0.3 — stack-based virtual machine
-; Same execution model as CPython, JVM, WebAssembly
-;
-; Instruction encoding (tagged lists):
-;   PUSH n = (0 n)   ADD = (1)   SUB = (2)   MUL = (3)
-;   NEG    = (4)     DUP = (5)   SWAP = (6)
-;
-; SUB:  pops a (top), b (below); pushes b - a
-; SWAP: pops a (top), b (below); pushes a then b  (b ends on top)
+-- NELA 0.4 — stack-based virtual machine
+-- Same model as CPython, JVM, WebAssembly
+--
+-- Instruction encoding (tagged lists):
+--   PUSH n = [0, n]   ADD = [1]   SUB = [2]   MUL = [3]
+--   NEG    = [4]       DUP = [5]   SWAP = [6]
+--
+-- SUB:  pops a (top), b (below); pushes b - a
+-- SWAP: pops a (top), b (below); pushes a then b  (b ends on top)
 
-; vm_run : List(Instr) -> List(Int) -> List(Int)
-(def vm_run (program stack)
-  (match program
-    (nil  stack)
-    ((instr :: rest)
-      (let opc (head instr)
-        (if (= opc 0)
-          (vm_run rest (cons (head (tail instr)) stack))
-          (if (= opc 1)
-            (let a (head stack)
-              (let b (head (tail stack))
-                (vm_run rest (cons (+ a b) (tail (tail stack))))))
-            (if (= opc 2)
-              (let a (head stack)
-                (let b (head (tail stack))
-                  (vm_run rest (cons (- b a) (tail (tail stack))))))
-              (if (= opc 3)
-                (let a (head stack)
-                  (let b (head (tail stack))
-                    (vm_run rest (cons (* a b) (tail (tail stack))))))
-                (if (= opc 4)
-                  (let a (head stack)
-                    (vm_run rest (cons (- 0 a) (tail stack))))
-                  (if (= opc 5)
-                    (let a (head stack)
-                      (vm_run rest (cons a stack)))
-                    (if (= opc 6)
-                      (let a (head stack)
-                        (let b (head (tail stack))
-                          (vm_run rest
-                            (cons b (cons a (tail (tail stack)))))))
-                      stack)))))))))))
+-- vm_run : List(Instr) -> List(Int) -> List(Int)
+def vm_run program stack =
+  match program
+  | []            = stack
+  | instr::rest   =
+      let opc = head instr in
+      if opc == 0 then vm_run rest ((head (tail instr)) :: stack)
+      else if opc == 1 then
+        let a = head stack in
+        let b = head (tail stack) in
+        vm_run rest ((a + b) :: tail (tail stack))
+      else if opc == 2 then
+        let a = head stack in
+        let b = head (tail stack) in
+        vm_run rest ((b - a) :: tail (tail stack))
+      else if opc == 3 then
+        let a = head stack in
+        let b = head (tail stack) in
+        vm_run rest ((a * b) :: tail (tail stack))
+      else if opc == 4 then
+        let a = head stack in
+        vm_run rest ((0 - a) :: tail stack)
+      else if opc == 5 then
+        let a = head stack in
+        vm_run rest (a :: stack)
+      else if opc == 6 then
+        let a = head stack in
+        let b = head (tail stack) in
+        vm_run rest (b :: a :: tail (tail stack))
+      else stack
 
-; vm_eval : List(Instr) -> Int
-; Execute program on an empty stack; return the top element of the final stack
-(def vm_eval (program)
-  (head (vm_run program nil)))
+-- vm_eval : List(Instr) -> Int
+-- Run on empty stack; return top of final stack
+def vm_eval program = head (vm_run program [])

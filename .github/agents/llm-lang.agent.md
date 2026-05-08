@@ -49,7 +49,7 @@ connect directly to type theory via the Curry-Howard-Lambek correspondence.
 
 ---
 
-## Architecture: Architect + Constructor Pattern (v0.3)
+## Architecture: Architect + Constructor Pattern (v0.4)
 
 ```
 Human NL Input
@@ -64,7 +64,7 @@ Human NL Input
          ▼
 ┌─────────────────────────────┐
 │  NELA Constructor           │  (Logic Model)
-│  Builds NELA-S (surface)    │  — writes NELA-S in S-expression syntax (.nela files)
+│  Builds NELA-S (surface)    │  — writes NELA-S in ML/Haskell-like syntax (.nela files)
 │  from TypedSpec             │  — uses: match/call/filter/append/etc.
 └────────┬────────────────────┘
          │  NELA-S program (quicksort.nela)
@@ -87,34 +87,29 @@ directly — those are compiler output, not LLM output.
 
 ### NELA-S Program Shape
 
-```scheme
-; One or more (def ...) forms
-(def fn_name (param ...)
-  body-expr)
+```haskell
+-- One or more def forms
+def fn_name param ... = body
 
-; Multi-def example:
-(def split (lst) ...)
-(def merge (a b) ...)
-(def mergesort (lst) ...)
+-- Multi-def example:
+def split lst = ...
+def merge a b = ...
+def mergesort lst = ...
 ```
 
 ---
 
-## NELA Program Representation (v0.3 — what LLMs write)
+## NELA Program Representation (v0.4 — what LLMs write)
 
-A NELA program is written in **S-expression syntax** and saved as a `.nela` file.
+A NELA program is written in **ML/Haskell-like syntax** and saved as a `.nela` file.
 The interaction net layer (NELA-C) is compiler output and is never hand-authored.
 
-```scheme
-; Quicksort in NELA-S v0.3
-(def qs (lst)
-  (match lst
-    (nil  nil)
-    ((h :: t)
-      (append
-        (qs (filter <= h t))
-        (cons h
-          (qs (filter > h t)))))))
+```haskell
+-- Quicksort in NELA-S v0.4
+def qs lst =
+  match lst
+  | []   = []
+  | h::t = qs [x <- t | x <= h] ++ [h] ++ qs [x <- t | x > h]
 ```
 
 See **Worked Examples** below for complete programs. For the full grammar, see the

@@ -40,7 +40,7 @@ description: >
 >
 > | Layer | Name | What LLMs do | Representation |
 > |-------|------|-------------|----------------|
-> | Surface | **NELA-S** | Read, write, reason | S-expression syntax (.nela files); parsed to typed expression DAG |
+> | Surface | **NELA-S** | Read, write, reason | ML/Haskell-like syntax (.nela files); parsed to typed expression DAG |
 > | Core | **NELA-C** | Never touch directly | Interaction net graph |
 >
 > LLMs write NELA-S. A compiler lowers NELA-S → NELA-C for formal verification and optimal
@@ -118,7 +118,8 @@ Expr :=
 
 | Representation | Tokens (approx) |
 |----------------|----------------|
-| NELA-S v0.3 S-expression | ~9 tokens |
+| NELA-S v0.4 ML syntax | ~25 tokens |
+| NELA-S v0.3 S-expression | ~35 tokens |
 | NELA-S v0.2 JSON DAG | ~70 tokens |
 | NELA-C interaction nets (v0.1) | ~250 tokens |
 | Python quicksort | ~45 tokens |

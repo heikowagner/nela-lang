@@ -22,8 +22,8 @@ You describe intent in English
            │
            ▼
   ┌──────────────────────────┐
-  │  NELA Constructor        │  Write NELA-S: S-expression syntax (.nela files)
-  │  (what LLMs produce)     │  — ops: match / call / let / if / pair / ...
+  │  NELA Constructor        │  Write NELA-S: ML/Haskell-like syntax (.nela files)
+  │  (what LLMs produce)     │  — ops: def / match / let / if / :: / ++ / ...
   └────────┬─────────────────┘
            │  examples/quicksort.nela
            │  examples/mergesort.nela
@@ -120,32 +120,36 @@ What makes this non-trivial in NELA-S:
 
 ## NELA-S Syntax (Quick Reference)
 
-NELA-S programs are written in S-expression syntax and saved as `.nela` files.
+NELA-S programs are written in ML/Haskell-like syntax and saved as `.nela` files.
 `src/nela_parser.py` parses `.nela` source into the dict AST evaluated by the runtime.
 
-```scheme
-; Program = one or more (def ...) forms
-(def name (param ...) body)
+```haskell
+-- Program = one or more def forms
+def name param ... = body
 
-; Expr
-INT | #t | #f | nil | name           ; literals and variables
-(match e case ...)                   ; exhaustive pattern match
-(let x e body)                       ; local binding
-(if cond then else)                  ; conditional
-(cons e e)                           ; list cons
-(pair e e) (fst e) (snd e)           ; Pair ADT
-(head e) (tail e)                    ; list accessors (unsafe)
-(take n e) (drop n e)                ; list slices
-(+ e e) (- e e) (* e e)              ; arithmetic
-(= e e) (< e e) (<= e e) (> e e) (>= e e)   ; comparison
-(and e e) (or e e) (not e)           ; boolean
-(filter pred pivot list)             ; pred: <= > < >= =
-(append e e)                         ; list concat
-(fn arg ...)                         ; function call
+-- Expr
+INT | name                          -- literals / variables
+[]                                  -- nil list
+[x]                                 -- singleton
+e :: e                              -- cons (right-assoc)
+e ++ e                              -- append
+(e, e)                              -- pair
+[x <- list | pred]                  -- list comprehension (filter)
+match e | pat = body | pat = body   -- exhaustive pattern match
+let x = e in body                   -- local binding
+let (a, b) = e in body              -- tuple destructuring
+if e then e else e                  -- conditional
+e op e                              -- + - * == < <= > >=
+f e e ...                           -- function application
 
-; Pattern (inside match cases)
-nil                                  ; matches []
-(h :: t)                             ; matches cons; _ is wildcard
+-- Pattern (inside match cases)
+[]             -- nil
+[h]            -- singleton
+h :: t         -- cons
+h :: h2 :: t   -- nested cons (3-spine)
+(p1, p2)       -- tuple decomposition
+_              -- wildcard
+name           -- catch-all variable
 ```
 
 ---
@@ -180,7 +184,7 @@ llm_coder/
 │   ├── stack_vm.nela            NELA-S: complete stack-based virtual machine
 │   └── *.nela.json              Legacy IR (JSON AST — still loadable)
 ├── src/
-│   ├── nela_parser.py           S-expression parser (.nela → dict AST)
+│   ├── nela_parser.py           ML/Haskell-like syntax parser (.nela → dict AST)
 │   └── nela_runtime.py          Surface language interpreter + test harness
 └── .github/
     ├── agents/
@@ -194,10 +198,48 @@ llm_coder/
 
 ---
 
+## Theory Alignment
+
+NELA's theoretical foundation is **Interaction Nets** (Lafont, 1990), supported by **Linear Logic**
+and **Dependent Type Theory**. This section explains how the v0.4 surface syntax connects to those
+ideas — and where the gaps remain.
+
+### What the syntax gets right
+
+| Surface feature | Theoretical basis |
+|---|---|
+| `def f x y = body` — fixed-arity named functions | Interaction net agents have a fixed number of ports; each `def` maps to an agent signature |
+| Exhaustive `match` | Linear Logic: every value must be consumed; a non-exhaustive match would leave a resource dangling |
+| `let (a, b) = split t in …` | Tensor product `A ⊗ B` — both components are consumed exactly once |
+| `h::t` cons / `[]` nil | Standard inductive list type; compiles to Con/Mat agent pairs in NELA-C |
+| No mutation, no global state | Strong confluence: reductions are local and order-independent; the same result is reached regardless of evaluation order |
+| `h::h2::t` 3-spine pattern | Matches multi-level structure in one step, mirroring multi-port agent matching in interaction nets |
+
+### Why v0.4 ML syntax is more aligned than v0.3 S-expressions
+
+The S-expression syntax (v0.3) was structurally similar to untyped Lisp — familiar, but without
+inherent directionality or arity discipline. The ML/Haskell-like style makes the type-theoretic
+structure explicit: each `def` declares a function with a fixed signature, pattern matching is
+exhaustive and structurally recursive, and the `let … in` binding form matches the proof-term
+notation of the linear sequent calculus. This is a closer match to how interaction net agents and
+their rewrite rules are actually specified.
+
+### Known gaps (future compiler work)
+
+| Gap | Explanation |
+|---|---|
+| **Linearity not enforced** | `def f x = x + x` duplicates `x`, violating the `A -o A` linear function type. The runtime does not check this; it is a guideline enforced at the (future) type checker layer. |
+| **No type signatures** | Dependent types are aspirational. The surface language is untyped; type inference belongs to the future `nela.types` tool. |
+| **Tuples are a surface convenience** | `(a, b)` / `fst` / `snd` are parsed into `pair`/`fst`/`snd` ops. In NELA-C they should be the tensor product `A ⊗ B`; currently the connection is by convention, not enforced. |
+| **NELA-C compiler not yet built** | The interaction net layer remains the formal semantic foundation and the planned compiler target. The runtime is a tree-walking interpreter that validates semantic correctness now. |
+
+---
+
 ## Design Decisions Log
 
 | Decision | Rationale |
 |----------|-----------|
+| ML/Haskell-like syntax (v0.4) instead of S-expressions (v0.3) | Further token reduction; maximally familiar to LLMs trained on Haskell/OCaml/ML; `def f x = body`, `match e \| pat = ...`, `h::t`, `++`, list comprehensions |
 | S-expression syntax (v0.3) instead of JSON (v0.2) | ~8× fewer tokens; familiar to LLMs from Lisp/Scheme training data; balanced parens are much easier to generate than nested JSON key-value dicts; JSON remains the IR |
 | Tree-walking interpreter first, interaction net compiler later | Validated design without compiler dependency; tests prove semantic correctness now |
 | Interaction nets as compiler backend, not surface | v0.1 hand-writing of 17-node nets was unworkable: more tokens than Python, ambiguous port conventions, 0 successful reductions |

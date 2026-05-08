@@ -1,42 +1,25 @@
-; NELA 0.3 — mergesort
-; Three definitions: split, merge, mergesort
+-- NELA 0.4 — mergesort
 
-; split : List(Nat) -> Pair(List(Nat), List(Nat))
-; Split by interleaving: even-indexed elements -> left, odd-indexed -> right
-(def split (lst)
-  (match lst
-    (nil  (pair nil nil))
-    ((h :: t)
-      (match t
-        (nil  (pair (cons h nil) nil))
-        ((h2 :: rest)
-          (let sub (split rest)
-            (pair
-              (cons h  (fst sub))
-              (cons h2 (snd sub)))))))))
+-- split : List(Nat) -> (List(Nat), List(Nat))
+-- Split by interleaving: even-indexed -> left, odd-indexed -> right
+def split lst =
+  match lst
+  | []        = ([], [])
+  | [h]       = ([h], [])
+  | h::h2::t  = let (l, r) = split t in (h::l, h2::r)
 
-; merge : List(Nat) -> List(Nat) -> List(Nat)
-; Merge two sorted lists into one sorted list
-(def merge (a b)
-  (match a
-    (nil  b)
-    ((ha :: ta)
-      (match b
-        (nil  a)
-        ((hb :: tb)
-          (if (<= ha hb)
-            (cons ha (merge ta b))
-            (cons hb (merge a  tb))))))))
+-- merge : List(Nat) -> List(Nat) -> List(Nat)
+def merge a b =
+  match (a, b)
+  | ([], _)           = b
+  | (_, [])           = a
+  | (ha::ta, hb::tb)  = if ha <= hb
+                        then ha :: merge ta b
+                        else hb :: merge a  tb
 
-; mergesort : List(Nat) -> List(Nat)
-(def mergesort (lst)
-  (match lst
-    (nil  nil)
-    ((h :: t)
-      (match t
-        (nil  lst)
-        ((_ :: _)
-          (let halves (split lst)
-            (merge
-              (mergesort (fst halves))
-              (mergesort (snd halves)))))))))
+-- mergesort : List(Nat) -> List(Nat)
+def mergesort lst =
+  match lst
+  | []   = []
+  | [h]  = [h]
+  | _    = let (l, r) = split lst in merge (mergesort l) (mergesort r)

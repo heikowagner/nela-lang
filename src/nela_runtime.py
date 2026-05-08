@@ -183,14 +183,10 @@ def python_quicksort(lst: list) -> list:
 # ── Tests ──────────────────────────────────────────────────────────────────────
 
 _QS_SOURCE = """\
-(def qs (lst)
-  (match lst
-    (nil  nil)
-    ((h :: t)
-      (append
-        (qs (filter <= h t))
-        (cons h
-          (qs (filter > h t)))))))
+def qs lst =
+  match lst
+  | []    = []
+  | h::t  = qs [x <- t | x <= h] ++ [h] ++ qs [x <- t | x > h]
 """
 
 NELA_QS_PROGRAM = parse_program(_QS_SOURCE)
