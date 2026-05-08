@@ -33,7 +33,7 @@ _TOKEN_RE = re.compile(r"""
     ::                 |   # cons operator
     \+\+               |   # append operator
     <=  | >=  | ==     |   # two-char comparisons
-    [+\-*/<>]          |   # single-char operators
+    [+\-*/%<>]         |   # single-char operators
     [()|\[\],=]        |   # punctuation
     -?\d+              |   # integer literal
     [A-Za-z_][A-Za-z_0-9']*  # identifier / keyword
@@ -522,7 +522,7 @@ def _parse_expr(ts):
 
 
 _STOP = {"|", "=", ",", ")", "]", "then", "else", "in", "def", "++", "::",
-         "+", "-", "*", "==", "<=", ">=", "<", ">", "<-"}
+         "+", "-", "*", "/", "%", "==", "<=", ">=", "<", ">", "<-"}
 
 def _is_atom_start(tok):
     if tok is None:              return False
@@ -573,12 +573,21 @@ def _parse_add(ts):
 
 
 def _parse_mul(ts):
-    left = _parse_apply(ts)
-    while ts.peek() in ("*", "/"):
+    left = _parse_unary(ts)
+    while ts.peek() in ("*", "/", "%"):
         op_tok = ts.eat()
-        right = _parse_apply(ts)
-        left = {"op": "mul" if op_tok == "*" else "div", "l": left, "r": right}
+        right = _parse_unary(ts)
+        node_op = {"*": "mul", "/": "div", "%": "mod"}[op_tok]
+        left = {"op": node_op, "l": left, "r": right}
     return left
+
+
+def _parse_unary(ts):
+    if ts.at("-"):
+        ts.eat()
+        e = _parse_apply(ts)
+        return {"op": "neg", "e": e}
+    return _parse_apply(ts)
 
 
 _BUILTIN_UNARY = {"head", "tail", "fst", "snd", "not"}

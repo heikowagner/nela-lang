@@ -89,6 +89,12 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
     if op == "div":
         return eval_expr(expr["l"], env, defs) // eval_expr(expr["r"], env, defs)
 
+    if op == "mod":
+        return eval_expr(expr["l"], env, defs) % eval_expr(expr["r"], env, defs)
+
+    if op == "neg":
+        return -eval_expr(expr["e"], env, defs)
+
     if op == "eq":
         return eval_expr(expr["l"], env, defs) == eval_expr(expr["r"], env, defs)
 
