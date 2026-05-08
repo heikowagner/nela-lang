@@ -1,5 +1,5 @@
 """
-NELA Runtime v0.6 — surface language interpreter.
+NELA Runtime v0.7 — surface language interpreter.
 
 The NELA surface language is ML/Haskell-like syntax (.nela files).
 nela_parser.py converts .nela source text into the dict AST evaluated here.
@@ -7,10 +7,10 @@ Interaction nets are the formal semantic foundation (compiler backend),
 not the surface representation.
 
 Supported ops:
-  var, int, float, bool, nil, cons, match, call, let, if,
-  pair, fst, snd, head, tail, take, drop,
+  var, int, float, char, bool, nil, cons, match, call, let, if,
+  pair, fst, snd, head, tail, take, drop, get,
   add, sub, mul, div, mod, neg,
-  sin, cos, sqrt, floor, ceil, round, abs,
+  sin, cos, sqrt, floor, ceil, round, abs, ord, chr,
   eq, lt, le, gt, ge, and, or, not,
   filter, append
 """
@@ -32,6 +32,9 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
         return expr["v"]
 
     if op == "float":
+        return expr["v"]
+
+    if op == "char":
         return expr["v"]
 
     if op == "bool":
@@ -109,6 +112,10 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
     if op == "round": return round(eval_expr(expr["e"], env, defs))
     if op == "abs":   return abs(eval_expr(expr["e"], env, defs))
 
+    # ── Char builtins (v0.7) ──────────────────────────────────────────────
+    if op == "ord":   return ord(eval_expr(expr["e"], env, defs))
+    if op == "chr":   return chr(eval_expr(expr["e"], env, defs))
+
     if op == "eq":
         return eval_expr(expr["l"], env, defs) == eval_expr(expr["r"], env, defs)
 
@@ -159,6 +166,11 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
         n   = eval_expr(expr["n"], env, defs)
         lst = eval_expr(expr["e"], env, defs)
         return lst[n:]
+
+    if op == "get":
+        lst = eval_expr(expr["e"], env, defs)
+        n   = int(eval_expr(expr["n"], env, defs))
+        return lst[n]
 
     if op == "and":
         return eval_expr(expr["l"], env, defs) and eval_expr(expr["r"], env, defs)
@@ -505,12 +517,66 @@ if __name__ == "__main__":
         for fn, args, ref_fn, label in wg_cases
     )
 
-    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass and wg_pass
+    # ── v0.7 tests: get, char literals, ord, chr ──────────────────────────────
+    _v7_src = """\
+def first  lst   = get lst 0
+def second lst   = get lst 1
+def third  lst   = get lst 2
+
+def char_eq a b  = if a == b then 1 else 0
+def to_int  c    = ord c
+def to_char n    = chr n
+def is_upper c   = if ord c >= 65 then if ord c <= 90 then 1 else 0 else 0
+def digit_val c  = ord c - ord '0'
+"""
+    _v7_prog = parse_program(_v7_src)
+
+    def _run_v7(fn, *args):
+        return run_program(_v7_prog, fn, *args)
+
+    v7_cases = [
+        # (label, got_fn, expected)
+        ("get [10,20,30] 0 = 10",  lambda: _run_v7("first",  [10, 20, 30]),        10),
+        ("get [10,20,30] 1 = 20",  lambda: _run_v7("second", [10, 20, 30]),        20),
+        ("get [10,20,30] 2 = 30",  lambda: _run_v7("third",  [10, 20, 30]),        30),
+        ("char_eq 'a' 'a' = 1",    lambda: _run_v7("char_eq", "a", "a"),           1),
+        ("char_eq 'a' 'b' = 0",    lambda: _run_v7("char_eq", "a", "b"),           0),
+        ("ord 'A' = 65",           lambda: _run_v7("to_int",  "A"),                65),
+        ("ord '0' = 48",           lambda: _run_v7("to_int",  "0"),                48),
+        ("chr 65 = 'A'",           lambda: _run_v7("to_char", 65),                 "A"),
+        ("chr 48 = '0'",           lambda: _run_v7("to_char", 48),                 "0"),
+        ("is_upper 'A' = 1",       lambda: _run_v7("is_upper", "A"),               1),
+        ("is_upper 'z' = 0",       lambda: _run_v7("is_upper", "z"),               0),
+        ("digit_val '5' = 5",      lambda: _run_v7("digit_val", "5"),              5),
+        ("digit_val '0' = 0",      lambda: _run_v7("digit_val", "0"),              0),
+        # get on the actual game map  (O(1) via builtin)
+        ("map get[0]=1 (wall)",    lambda: run_program(wg_game_prog, "map_get", MAP8, 0),  1),
+        ("map get[9]=0 (open)",    lambda: run_program(wg_game_prog, "map_get", MAP8, 9),  0),
+    ]
+
+    def run_v7_test(label, got_fn, expected):
+        print(f"\n{'='*55}")
+        print(f"[v7: {label}]")
+        got = got_fn()
+        ok  = got == expected
+        print(f"  Expected:  {expected!r}")
+        print(f"  NELA:      {got!r}")
+        print(f"  Match:     {'PASS' if ok else 'FAIL'}")
+        return ok
+
+    print("\n" + "#"*55)
+    print("# V0.7 (get / char / ord / chr)")
+    print("#"*55)
+    v7_pass = all(run_v7_test(lbl, fn, exp) for lbl, fn, exp in v7_cases)
+
+    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass and wg_pass and v7_pass
     print(f"\n{'='*55}")
     print(f"Quicksort:  {'PASS' if qs_pass else 'FAIL'}")
     print(f"Mergesort:  {'PASS' if ms_pass else 'FAIL'}")
     print(f"Stack VM:   {'PASS' if vm_pass else 'FAIL'}")
     print(f"Wolf Grid:  {'PASS' if wolf_pass else 'FAIL'}")
     print(f"Wolf Game:  {'PASS' if wg_pass else 'FAIL'}")
+    print(f"V0.7:       {'PASS' if v7_pass else 'FAIL'}")
     print(f"Overall:    {'ALL TESTS PASSED' if all_pass else 'SOME TESTS FAILED'}")
     sys.exit(0 if all_pass else 1)
+

@@ -105,7 +105,7 @@ Discrete DDA (cardinal directions), BFS reachability, no trig needed.
 scan_4 map 1 1 5  →  [3, 3, 1, 1]   (open corridor right/down, wall left/up)
 ```
 
-### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.6 — playable)*
+### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.7 — playable)*
 
 Fully playable Wolfenstein raycaster. **All game logic is pure NELA-S.** Python is strictly I/O:
 raw keyboard and `print`. Zero precomputed data — no trig tables, no constants.
@@ -175,19 +175,28 @@ NELA-S programs are written in ML/Haskell-like syntax and saved as `.nela` files
 def name param ... = body
 
 -- Expr
-INT | name                          -- literals / variables
-[]                                  -- nil list
-[x]                                 -- singleton
-e :: e                              -- cons (right-assoc)
-e ++ e                              -- append
-(e, e)                              -- pair
-[x <- list | pred]                  -- list comprehension (filter)
+INT | FLOAT | CHAR             -- literals: 42, 3.14, 'x'
+name                           -- variables
+[]                             -- nil list
+[x]                            -- singleton
+e :: e                         -- cons (right-assoc)
+e ++ e                         -- append
+(e, e)                         -- pair
+[x <- list | pred]             -- list comprehension (filter)
 match e | pat = body | pat = body   -- exhaustive pattern match
-let x = e in body                   -- local binding
-let (a, b) = e in body              -- tuple destructuring
-if e then e else e                  -- conditional
-e op e                              -- + - * == < <= > >=
-f e e ...                           -- function application
+let x = e in body              -- local binding
+let (a, b) = e in body         -- tuple destructuring
+if e then e else e             -- conditional
+e op e                         -- + - * == < <= > >=
+f e e ...                      -- function application
+
+-- Builtins (unary)
+head tail fst snd not          -- list / pair / logic
+sin cos sqrt floor ceil round abs  -- math (float)
+ord chr                        -- char <-> int
+
+-- Builtins (binary)
+take n lst   drop n lst   get lst n   -- list slicing / indexing (get is O(1))
 
 -- Pattern (inside match cases)
 []             -- nil
@@ -215,10 +224,11 @@ Expected output:
 # STACK VM     12/12 PASS
 # WOLF GRID    17/17 PASS
 # WOLF GAME    14/14 PASS
+# V0.7         15/15 PASS
 Overall: ALL TESTS PASSED
 ```
 
-67 total test cases. Requires Python 3.10+. No external dependencies.
+76 total test cases. Requires Python 3.10+. No external dependencies.
 
 Requires Python 3.10+. No external dependencies.
 
@@ -329,12 +339,23 @@ Float literals and math builtins added. Python harness is now **strictly I/O** �
 | I/O-only Python harness | ✅ done | `wolf_player.py` — zero precomputed data, keyboard + print only |
 | Wolf Game test suite | ✅ done | 14 test cases covering trig, raycasting, game update |
 
-## v0.7 Roadmap
+## v0.7 — Completed
+
+O(1) list indexing, character literals, and char↔int conversion.
+
+| Feature | Status | Notes |
+|---|---|---|
+| `get lst n` builtin | ✅ done | O(1) list index: `get lst 2` → `lst[2]`; replaces `head (drop n lst)` |
+| `char` literals `'x'` | ✅ done | Single-quoted: `'A'`, `'0'`, `' '`; stored as Python `str` |
+| `ord c` builtin | ✅ done | `ord 'A'` → `65` (char → int) |
+| `chr n` builtin | ✅ done | `chr 65` → `'A'` (int → char) |
+| wolf_game.nela O(1) map lookup | ✅ done | `map_get map idx = get map idx` (was `head (drop idx map)`) |
+
+## v0.8 Roadmap
 
 | Feature | Motivation | Theory |
 |---|---|---|
-| `char` / `atom` type | Typed map cells (`'S'`, `'B'`, `' '`); string keys | Tagged integer / interned symbol; fits `⊕` sum type |
-| `IOToken` linear I/O | Mutable player state, door state, render side effects | `IO(A)` from Linear Logic; linear token enforces sequencing |
-| `Array n A` with O(1) index | Replace `head (drop n lst)` O(n) lookup | Sigma type `Σ(i:Fin n). A`; compiler maps to buffer |
+| `IOToken` linear I/O | Mutable state, sequenced side effects | `IO(A)` from Linear Logic; linear token enforces ordering |
+| `Array n A` with mutable set | O(1) write + typed size; replace flat lists for maps | Sigma type `Σ(i:Fin n). A`; compiler maps to mutable buffer |
 | NELA-C compiler | Formal verification + optimal parallel reduction | Interaction net graph; lowers NELA-S → NELA-C |
 

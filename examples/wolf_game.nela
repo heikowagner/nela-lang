@@ -1,11 +1,9 @@
--- NELA v0.6 — Wolfenstein raycaster (float positions, direct sin/cos)
+-- NELA v0.7 — Wolfenstein raycaster (float positions, direct sin/cos, O(1) get)
 --
--- v0.6 vs v0.5:
---   + float literals and sin/cos/floor/ceil builtins in NELA-S
---   - sin_tab / cos_tab parameters ELIMINATED everywhere
---   - fixed-point ×64 positions replaced by real cell-unit floats
---   Python harness (wolf_player.py) now provides ZERO precomputed data.
---     It only does: keyboard input and terminal output.
+-- v0.7 vs v0.6:
+--   + char literals 'x' and ord/chr builtins added to NELA-S
+--   + get lst n  — O(1) list index (replaces head (drop n lst))
+--   - map_get now uses get instead of head (drop idx map)
 --
 -- Coordinate system:
 --   Positions: float, 1 unit = 1 grid cell.
@@ -27,7 +25,7 @@ def norm_angle a =
 
 -- ── Map primitives ────────────────────────────────────────────────────────────
 
-def map_get map idx = head (drop idx map)
+def map_get map idx = get map idx
 
 -- is_wall takes float x,y: floor to grid cell first
 def is_wall map x y w = map_get map ((floor x) + (floor y) * w)

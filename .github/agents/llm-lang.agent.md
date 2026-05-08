@@ -115,7 +115,7 @@ def qs lst =
 See **Worked Examples** below for complete programs. For the full grammar, see the
 `nela-foundations` skill.
 
-### Worked Examples (all tests pass — 67 cases)
+### Worked Examples (all tests pass — 76 cases)
 
 | File | What it demonstrates |
 |------|----------------------|
@@ -123,7 +123,7 @@ See **Worked Examples** below for complete programs. For the full grammar, see t
 | `examples/mergesort.nela` | Three cooperating functions; `pair`/`fst`/`snd`; multi-arg calls |
 | `examples/stack_vm.nela` | Stack-based VM with 7 opcodes; runtime dispatch on instruction type |
 | `examples/wolf_grid.nela` | Discrete DDA grid engine; BFS reachability; `div`/`mod`; `(-1)` neg args |
-| `examples/wolf_game.nela` | Playable Wolfenstein raycaster. **All logic in NELA-S.** Python is strictly I/O (keyboard + print). Float positions, direct `sin`/`cos` builtins — zero precomputed data. |
+| `examples/wolf_game.nela` | Playable Wolfenstein raycaster. **All logic in NELA-S.** Float positions, direct `sin`/`cos`, O(1) `get` map lookup. Python: keyboard + print only. |
 
 Run all tests: `python3 src/nela_runtime.py`
 

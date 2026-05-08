@@ -1,5 +1,5 @@
 """
-NELA Parser v0.6 — ML-style surface syntax
+NELA Parser v0.7 — ML-style surface syntax
 
 Grammar (informal):
   Program  ::= Def+
@@ -15,13 +15,19 @@ Grammar (informal):
   MulExpr  ::= UnaryExpr (('*' | '/' | '%') UnaryExpr)*
   UnaryExpr::= '-' ApplyExpr | ApplyExpr
   ApplyExpr::= Atom Atom*
-  Atom     ::= FLOAT | INT | BOOL | NAME | '(' Expr ')' | '(' Expr ',' Expr ')'
+  Atom     ::= FLOAT | INT | CHAR | BOOL | NAME | '(' Expr ')' | '(' Expr ',' Expr ')'
              | '[]' | '[' Expr (',' Expr)* ']'
              | '[' NAME '<-' Expr '|' CmpOp Expr ']'
 
 v0.6 additions:
   FLOAT literals (e.g. 3.14, 0.05)
   math builtins: sin cos sqrt floor ceil round abs
+
+v0.7 additions:
+  CHAR literals: 'x'  (single-quoted, stored as Python str of length 1)
+  get  lst n   — O(1) list index:  get lst 2  (replaces head (drop n lst))
+  ord  c       — char -> int:      ord 'A' = 65
+  chr  n       — int  -> char:     chr 65  = 'A'
 """
 
 import re
@@ -42,6 +48,7 @@ _TOKEN_RE = re.compile(r"""
     [()\|\[\],=]       |   # punctuation
     \d+\.\d+           |   # float literal  (must precede integer)
     -?\d+              |   # integer literal
+    '[^']*'            |   # char literal  'x'
     [A-Za-z_][A-Za-z_0-9']*  # identifier / keyword
 """, re.VERBOSE)
 
@@ -536,6 +543,7 @@ def _is_atom_start(tok):
     if tok in _STOP:                        return False
     if re.fullmatch(r"\d+\.\d+", tok):     return True   # float
     if re.fullmatch(r"-?\d+", tok):        return True   # integer
+    if len(tok) == 3 and tok[0] == tok[2] == "'":  return True  # char 'x'
     if tok in ("[]", "(", "["):             return True
     if tok[0].isalpha() or tok[0] == "_":  return True
     return False
@@ -598,8 +606,9 @@ def _parse_unary(ts):
 
 
 _BUILTIN_UNARY = {"head", "tail", "fst", "snd", "not",
-                   "sin", "cos", "sqrt", "floor", "ceil", "round", "abs"}
-_BUILTIN_BINARY = {"take", "drop", "append", "filter"}
+                   "sin", "cos", "sqrt", "floor", "ceil", "round", "abs",
+                   "ord", "chr"}
+_BUILTIN_BINARY = {"take", "drop", "append", "filter", "get"}
 
 
 def _parse_apply(ts):
@@ -613,9 +622,11 @@ def _parse_apply(ts):
             # Builtin unary ops: head x → {"op":"head","e":x}
             if name in _BUILTIN_UNARY and len(args) == 1:
                 return {"op": name, "e": args[0]}
-            # Builtin binary take/drop: take n e
+            # Builtin binary take/drop: take n e  /  get e n
             if name in ("take", "drop") and len(args) == 2:
                 return {"op": name, "n": args[0], "e": args[1]}
+            if name == "get" and len(args) == 2:
+                return {"op": "get", "e": args[0], "n": args[1]}
             return {"op": "call", "fn": name, "a": args}
         raise SyntaxError(f"Application of non-name {func!r}")
     return func
@@ -630,6 +641,10 @@ def _parse_atom(ts):
 
     if tok is not None and re.fullmatch(r"-?\d+", tok):
         ts.eat(); return {"op": "int", "v": int(tok)}
+
+    # Char literal 'x'
+    if tok is not None and len(tok) == 3 and tok[0] == tok[2] == "'":
+        ts.eat(); return {"op": "char", "v": tok[1]}
 
     if tok == "True":  ts.eat(); return {"op": "bool", "v": True}
     if tok == "False": ts.eat(); return {"op": "bool", "v": False}
