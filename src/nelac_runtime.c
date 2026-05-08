@@ -114,11 +114,6 @@ static uint32_t net_alloc(Net *net, uint8_t tag, uint8_t arity, int64_t meta) {
 }
 
 /* Connect port (a, pa) ↔ (b, pb) bidirectionally. */
-static void connect(Net *net, uint32_t a, int pa, uint32_t b, int pb) {
-    net->nodes[a].ports[pa] = b * MAX_PORTS + pb;
-    net->nodes[b].ports[pb] = a * MAX_PORTS + pa;
-}
-
 /* Get node id from a packed port value. */
 static inline uint32_t port_node(uint32_t p) { return p / MAX_PORTS; }
 /* Get port index from a packed port value. */
@@ -137,11 +132,6 @@ static int64_t read_i64(const uint8_t *p) {
     for (int i = 0; i < 8; i++) v = (v << 8) | p[i];
     return (int64_t)v;
 }
-static void write_u32(uint8_t *p, uint32_t v) {
-    p[0] = (v >> 24) & 0xFF; p[1] = (v >> 16) & 0xFF;
-    p[2] = (v >>  8) & 0xFF; p[3] =  v        & 0xFF;
-}
-
 /* ── Load .nelac ──────────────────────────────────────────────────────────── */
 
 /* Returns root node id, or exits on error. */
@@ -378,7 +368,6 @@ static int fire(Net *net, uint32_t ai, uint32_t bi) {
 #define ARITH_OP(OPTAG, EXPR_INT, EXPR_FLT) \
     if (a->tag == (OPTAG) || b->tag == (OPTAG)) { \
         Node *op_n  = (a->tag == (OPTAG)) ? a : b; \
-        uint32_t op_nid = (a->tag == (OPTAG)) ? ai : bi; \
         uint32_t lp = op_n->ports[1], rp = op_n->ports[2], resp = op_n->ports[3]; \
         if (lp == NULL_PORT || rp == NULL_PORT) return 0; \
         uint32_t ln = port_node(lp), rn = port_node(rp); \
@@ -413,7 +402,6 @@ static int fire(Net *net, uint32_t ai, uint32_t bi) {
     /* ── NEG ⊳ INT/FLT ──────────────────────────────────────────────────── */
     if (a->tag == TAG_NEG || b->tag == TAG_NEG) {
         Node *op_n  = (a->tag == TAG_NEG) ? a : b;
-        uint32_t op_nid = (a->tag == TAG_NEG) ? ai : bi;
         uint32_t vp = op_n->ports[1], resp = op_n->ports[2];
         if (vp == NULL_PORT) return 0;
         Node *vnode = &net->nodes[port_node(vp)];
@@ -434,7 +422,6 @@ static int fire(Net *net, uint32_t ai, uint32_t bi) {
 #define CMP_OP(OPTAG, CMP_INT, CMP_FLT) \
     if (a->tag == (OPTAG) || b->tag == (OPTAG)) { \
         Node *op_n  = (a->tag == (OPTAG)) ? a : b; \
-        uint32_t op_nid = (a->tag == (OPTAG)) ? ai : bi; \
         uint32_t lp = op_n->ports[1], rp = op_n->ports[2], resp = op_n->ports[3]; \
         if (lp == NULL_PORT || rp == NULL_PORT) return 0; \
         Node *lnode = &net->nodes[port_node(lp)], *rnode = &net->nodes[port_node(rp)]; \
@@ -466,7 +453,6 @@ static int fire(Net *net, uint32_t ai, uint32_t bi) {
     /* ── Boolean ops ────────────────────────────────────────────────────── */
     if ((a->tag == TAG_AND || b->tag == TAG_AND)) {
         Node *op_n  = (a->tag == TAG_AND) ? a : b;
-        uint32_t op_nid = (a->tag == TAG_AND) ? ai : bi;
         uint32_t lp = op_n->ports[1], rp = op_n->ports[2], resp = op_n->ports[3];
         if (lp == NULL_PORT || rp == NULL_PORT) return 0;
         Node *ln = &net->nodes[port_node(lp)], *rn = &net->nodes[port_node(rp)];
@@ -481,7 +467,6 @@ static int fire(Net *net, uint32_t ai, uint32_t bi) {
     }
     if ((a->tag == TAG_ORR || b->tag == TAG_ORR)) {
         Node *op_n  = (a->tag == TAG_ORR) ? a : b;
-        uint32_t op_nid = (a->tag == TAG_ORR) ? ai : bi;
         uint32_t lp = op_n->ports[1], rp = op_n->ports[2], resp = op_n->ports[3];
         if (lp == NULL_PORT || rp == NULL_PORT) return 0;
         Node *ln = &net->nodes[port_node(lp)], *rn = &net->nodes[port_node(rp)];
@@ -496,7 +481,6 @@ static int fire(Net *net, uint32_t ai, uint32_t bi) {
     }
     if ((a->tag == TAG_NOT || b->tag == TAG_NOT)) {
         Node *op_n  = (a->tag == TAG_NOT) ? a : b;
-        uint32_t op_nid = (a->tag == TAG_NOT) ? ai : bi;
         uint32_t vp = op_n->ports[1], resp = op_n->ports[2];
         if (vp == NULL_PORT) return 0;
         Node *vn = &net->nodes[port_node(vp)];
@@ -524,7 +508,12 @@ static void print_value(Net *net, uint32_t nid, int depth) {
             break;
         case TAG_FLT: {
             double d; memcpy(&d, &n->meta, 8);
-            printf("%.10g", d);
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%.10g", d);
+            /* ensure there's always a decimal point so it reads as float */
+            if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E'))
+                strncat(buf, ".0", sizeof(buf) - strlen(buf) - 1);
+            printf("%s", buf);
             break;
         }
         case TAG_STR:
