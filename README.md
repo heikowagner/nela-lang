@@ -251,7 +251,8 @@ llm_coder/
 │   └── *.nela.json              Legacy IR (JSON AST — still loadable)
 ├── src/
 │   ├── nela_parser.py           ML/Haskell-like syntax parser (.nela → dict AST)
-│   ├── nela_runtime.py          Surface language interpreter + test harness
+│   ├── nela_runtime.py          Surface language interpreter + test harness (92 tests)
+│   ├── nela_compiler.py         NELA-C compiler: AST → interaction net → .nelac bytecode
 │   └── wolf_player.py           I/O-only harness: keyboard input and terminal output only
 └── .github/
     ├── agents/
@@ -378,9 +379,25 @@ IOToken linear I/O. The entire game loop is now pure NELA-S.
 | `game_loop` in wolf_game.nela | ✅ done | Full recurse-until-quit loop in NELA-S; Python harness reduced to 2 lines |
 | wolf_player.py mission compliance | ✅ done | Python provides only: 2 callbacks + `IOToken(...)` + `run_program(...)` |
 
-## v0.10 Roadmap
+## v0.10 — Completed
+
+NELA-C compiler: NELA-S → interaction net bytecode (`.nelac`).
+
+| Feature | Status | Notes |
+|---|---|---|
+| `nela_compiler.py` | ✅ done | NELA-S AST → interaction net graph → `.nelac` binary |
+| Agent vocabulary | ✅ done | 25 agents: CON/DUP/ERA/PAR/INT/FLT/STR/BOO/APP/LAM + arithmetic + list ops |
+| Bytecode format | ✅ done | `NELAC` magic + version(u8) + node_count(u32) + node table + root(u32) |
+| Serialise / deserialise | ✅ done | `net_to_bytes` / `bytes_to_net` / `bytes_to_py` roundtrip |
+| Disassembler | ✅ done | `disassemble(bytes)` → human-readable node listing |
+| `compile_and_run` API | ✅ done | Compiles, reduces, serialises; returns `(python_result, bytes)` |
+| 19 compiler tests | ✅ done | qs, mergesort, wolf_game (deg_to_rad, norm_angle, is_wall, key_action, use_door, …) |
+
+Run compiler: `python3 src/nela_compiler.py`
+
+## v0.11 Roadmap
 
 | Feature | Motivation | Theory |
 |---|---|---|
-| NELA-C compiler | Formal verification + optimal parallel reduction | Interaction net graph; lowers NELA-S → NELA-C |
+| Lazy (unreduced) net compilation | Compile without evaluating; emit active pairs; run the SIC reducer | Full interaction net graph rewriting; strong confluence |
 
