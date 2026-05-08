@@ -1,5 +1,5 @@
 """
-NELA Parser v0.4 — ML-style surface syntax
+NELA Parser v0.6 — ML-style surface syntax
 
 Grammar (informal):
   Program  ::= Def+
@@ -12,11 +12,16 @@ Grammar (informal):
   AppendExpr ::= CmpExpr ('++' AppendExpr)?
   CmpExpr  ::= AddExpr (('==' | '<=' | '>=' | '<' | '>') AddExpr)?
   AddExpr  ::= MulExpr (('+' | '-') MulExpr)*
-  MulExpr  ::= ApplyExpr ('*' ApplyExpr)*
+  MulExpr  ::= UnaryExpr (('*' | '/' | '%') UnaryExpr)*
+  UnaryExpr::= '-' ApplyExpr | ApplyExpr
   ApplyExpr::= Atom Atom*
-  Atom     ::= INT | BOOL | NAME | '(' Expr ')' | '(' Expr ',' Expr ')'
+  Atom     ::= FLOAT | INT | BOOL | NAME | '(' Expr ')' | '(' Expr ',' Expr ')'
              | '[]' | '[' Expr (',' Expr)* ']'
              | '[' NAME '<-' Expr '|' CmpOp Expr ']'
+
+v0.6 additions:
+  FLOAT literals (e.g. 3.14, 0.05)
+  math builtins: sin cos sqrt floor ceil round abs
 """
 
 import re
@@ -34,7 +39,8 @@ _TOKEN_RE = re.compile(r"""
     \+\+               |   # append operator
     <=  | >=  | ==     |   # two-char comparisons
     [+\-*/%<>]         |   # single-char operators
-    [()|\[\],=]        |   # punctuation
+    [()\|\[\],=]       |   # punctuation
+    \d+\.\d+           |   # float literal  (must precede integer)
     -?\d+              |   # integer literal
     [A-Za-z_][A-Za-z_0-9']*  # identifier / keyword
 """, re.VERBOSE)
@@ -525,12 +531,13 @@ _STOP = {"|", "=", ",", ")", "]", "then", "else", "in", "def", "++", "::",
          "+", "-", "*", "/", "%", "==", "<=", ">=", "<", ">", "<-"}
 
 def _is_atom_start(tok):
-    if tok is None:              return False
-    if tok in _KEYWORDS:         return False
-    if tok in _STOP:             return False
-    if re.fullmatch(r"-?\d+", tok): return True
-    if tok in ("[]", "(", "["):  return True
-    if tok[0].isalpha() or tok[0] == "_": return True
+    if tok is None:                         return False
+    if tok in _KEYWORDS:                    return False
+    if tok in _STOP:                        return False
+    if re.fullmatch(r"\d+\.\d+", tok):     return True   # float
+    if re.fullmatch(r"-?\d+", tok):        return True   # integer
+    if tok in ("[]", "(", "["):             return True
+    if tok[0].isalpha() or tok[0] == "_":  return True
     return False
 
 
@@ -590,7 +597,8 @@ def _parse_unary(ts):
     return _parse_apply(ts)
 
 
-_BUILTIN_UNARY = {"head", "tail", "fst", "snd", "not"}
+_BUILTIN_UNARY = {"head", "tail", "fst", "snd", "not",
+                   "sin", "cos", "sqrt", "floor", "ceil", "round", "abs"}
 _BUILTIN_BINARY = {"take", "drop", "append", "filter"}
 
 
@@ -615,6 +623,10 @@ def _parse_apply(ts):
 
 def _parse_atom(ts):
     tok = ts.peek()
+
+    # Float literal (must precede integer)
+    if tok is not None and re.fullmatch(r"\d+\.\d+", tok):
+        ts.eat(); return {"op": "float", "v": float(tok)}
 
     if tok is not None and re.fullmatch(r"-?\d+", tok):
         ts.eat(); return {"op": "int", "v": int(tok)}

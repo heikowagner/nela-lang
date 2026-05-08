@@ -1,19 +1,21 @@
 """
-NELA Runtime v0.3 — surface language interpreter.
+NELA Runtime v0.6 — surface language interpreter.
 
-The NELA surface language is S-expression syntax (.nela files).
+The NELA surface language is ML/Haskell-like syntax (.nela files).
 nela_parser.py converts .nela source text into the dict AST evaluated here.
 Interaction nets are the formal semantic foundation (compiler backend),
 not the surface representation.
 
 Supported ops:
-  var, int, bool, nil, cons, match, call, let, if,
+  var, int, float, bool, nil, cons, match, call, let, if,
   pair, fst, snd, head, tail, take, drop,
-  add, sub, mul, eq, lt, le, gt, ge, and, or, not,
+  add, sub, mul, div, mod, neg,
+  sin, cos, sqrt, floor, ceil, round, abs,
+  eq, lt, le, gt, ge, and, or, not,
   filter, append
 """
 
-import json, sys, time
+import json, math, sys, time
 from typing import Any
 from nela_parser import parse_program, parse_file
 
@@ -27,6 +29,9 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
         return env[expr["n"]]
 
     if op == "int":
+        return expr["v"]
+
+    if op == "float":
         return expr["v"]
 
     if op == "bool":
@@ -94,6 +99,15 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
 
     if op == "neg":
         return -eval_expr(expr["e"], env, defs)
+
+    # ── Maths builtins (v0.6) ─────────────────────────────────────────────
+    if op == "sin":   return math.sin(eval_expr(expr["e"], env, defs))
+    if op == "cos":   return math.cos(eval_expr(expr["e"], env, defs))
+    if op == "sqrt":  return math.sqrt(eval_expr(expr["e"], env, defs))
+    if op == "floor": return math.floor(eval_expr(expr["e"], env, defs))
+    if op == "ceil":  return math.ceil(eval_expr(expr["e"], env, defs))
+    if op == "round": return round(eval_expr(expr["e"], env, defs))
+    if op == "abs":   return abs(eval_expr(expr["e"], env, defs))
 
     if op == "eq":
         return eval_expr(expr["l"], env, defs) == eval_expr(expr["r"], env, defs)
@@ -431,11 +445,72 @@ if __name__ == "__main__":
         for fn, py_fn, args, label in wolf_cases
     )
 
-    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass
+    # ── Wolf Game tests (v0.6 float + trig) ───────────────────────────────────
+    import math as _math
+    MAP8 = [
+        1,1,1,1,1,1,1,1,
+        1,0,0,0,0,0,0,1,
+        1,0,1,1,0,1,0,1,
+        1,0,1,0,0,0,0,1,
+        1,0,0,0,1,0,0,1,
+        1,0,1,0,0,1,0,1,
+        1,0,0,0,0,0,0,1,
+        1,1,1,1,1,1,1,1,
+    ]
+    W8 = 8
+
+    def _wg_approx(got, ref):
+        if isinstance(ref, float):
+            return abs(got - ref) < 1e-9
+        return got == ref
+
+    wg_game_prog = _load("wolf_game.nela")
+    wg_cases = [
+        # (fn, args, ref_fn, label)
+        ("deg_to_rad",  [0],   lambda: 0.0,                          "deg_to_rad(0)=0"),
+        ("deg_to_rad",  [90],  lambda: _math.pi / 2,                 "deg_to_rad(90)=pi/2"),
+        ("deg_to_rad",  [180], lambda: _math.pi,                     "deg_to_rad(180)=pi"),
+        ("norm_angle",  [0],   lambda: 0,                            "norm_angle(0)"),
+        ("norm_angle",  [370], lambda: 10,                           "norm_angle(370)=10"),
+        ("norm_angle",  [-20], lambda: 340,                          "norm_angle(-20)=340"),
+        ("norm_angle",  [720], lambda: 0,                            "norm_angle(720)=0"),
+        ("is_wall",     [MAP8, 0.5, 0.5, W8], lambda: 1,             "is_wall(0.5,0.5)=wall"),
+        ("is_wall",     [MAP8, 1.5, 1.5, W8], lambda: 0,             "is_wall(1.5,1.5)=open"),
+        ("is_wall",     [MAP8, 2.5, 2.5, W8], lambda: 1,             "is_wall(2.5,2.5)=wall"),
+        ("turn",        [[1.5, 1.5, 90], 5, ],  lambda: [1.5, 1.5, 95],  "turn +5 -> 95"),
+        ("turn",        [[1.5, 1.5, 5], -10],   lambda: [1.5, 1.5, 355], "turn -10 wraps -> 355"),
+        ("update",      [[1.5, 1.5, 90], 2, MAP8, W8], lambda: [1.5, 1.5, 85], "key=2 turn-left"),
+        ("update",      [[1.5, 1.5, 90], 3, MAP8, W8], lambda: [1.5, 1.5, 95], "key=3 turn-right"),
+    ]
+
+    def run_wg_test(prog, fn, args, ref_fn, label):
+        print(f"\n{'='*55}")
+        print(f"[wg: {label}]")
+        ref = ref_fn()
+        got = run_program(prog, fn, *args)
+        if isinstance(ref, list):
+            ok = all(_wg_approx(g, r) for g, r in zip(got, ref)) and len(got) == len(ref)
+        else:
+            ok = _wg_approx(got, ref)
+        print(f"  Reference: {ref}")
+        print(f"  NELA:      {got}")
+        print(f"  Match:     {'PASS' if ok else 'FAIL'}")
+        return ok
+
+    print("\n" + "#"*55)
+    print("# WOLF GAME (v0.6 float trig)")
+    print("#"*55)
+    wg_pass = all(
+        run_wg_test(wg_game_prog, fn, args, ref_fn, label)
+        for fn, args, ref_fn, label in wg_cases
+    )
+
+    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass and wg_pass
     print(f"\n{'='*55}")
     print(f"Quicksort:  {'PASS' if qs_pass else 'FAIL'}")
     print(f"Mergesort:  {'PASS' if ms_pass else 'FAIL'}")
     print(f"Stack VM:   {'PASS' if vm_pass else 'FAIL'}")
     print(f"Wolf Grid:  {'PASS' if wolf_pass else 'FAIL'}")
+    print(f"Wolf Game:  {'PASS' if wg_pass else 'FAIL'}")
     print(f"Overall:    {'ALL TESTS PASSED' if all_pass else 'SOME TESTS FAILED'}")
     sys.exit(0 if all_pass else 1)

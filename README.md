@@ -105,29 +105,29 @@ Discrete DDA (cardinal directions), BFS reachability, no trig needed.
 scan_4 map 1 1 5  →  [3, 3, 1, 1]   (open corridor right/down, wall left/up)
 ```
 
-### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.5 — playable)*
+### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.6 — playable)*
 
 Fully playable Wolfenstein raycaster. **All game logic is pure NELA-S.** Python is strictly I/O:
-trig tables (unavoidable — NELA-S has no floats), raw keyboard, and `print`. No logic in Python.
+raw keyboard and `print`. Zero precomputed data — no trig tables, no constants.
 
-Fixed-point arithmetic: 1 cell = 64 units. Angles 0–359°. Trig tables: sin/cos×64 passed as
-list arguments. State: `[px, py, angle]`.
+Float positions: 1 unit = 1 grid cell. Angles 0–359° (integer). Direct `sin`/`cos` builtins.
+State: `[px, py, angle]` where `px`, `py` are floats.
 
 | NELA-S function | Logic |
 |---|---|
-| `get_nth lst n` | O(1) index via built-in `head (drop n lst)` |
+| `deg_to_rad a` | `a * 0.017453292519943295` (π/180 as float literal) |
 | `norm_angle a` | Normalize to 0–359 (handles negatives by recursion) |
-| `is_wall`, `map_get` | Same as wolf_grid |
-| `ray_march map w rx ry dx dy limit` | Fixed-point DDA, 512-step limit |
-| `render_col ...` | Single column wall height: `168 / (dist + 1)` |
+| `is_wall map x y w` | `map_get map ((floor x) + (floor y) * w)` |
+| `ray_march map w rx ry dx dy limit` | Float DDA, 400-step limit, step 0.05 cells |
+| `render_col ...` | Single column wall height: `floor(21 / ((dist+1)*0.05))` |
 | `render_cols ...` | 40 columns across ±20° FOV → list of heights |
 | `shade_of h screen_h` | Shade level integer (0=ceil, 1=floor, 2–4=wall distance) |
 | `frame_cell row h mid screen_h` | Pixel decision: ceiling / floor / wall shade |
 | `frame_row`, `make_frame` | Assemble 21×40 frame as `list[list[int]]` |
 | `render_frame ...` | Heights + full frame in one call |
-| `move_forward`, `move_back` | Fixed-point movement with collision detection |
+| `move_forward`, `move_back` | Float movement (0.2 cells/step) with collision |
 | `turn state delta` | Rotate by delta degrees; normalise |
-| `update state key map w sin_tab cos_tab` | Dispatch on key 0–3 → new state |
+| `update state key map w` | Dispatch on key 0–3 → new state (no trig table args) |
 
 **Run the game:** `cd src && python3 wolf_player.py`  (W/S = move, A/D = turn, Q = quit)
 
@@ -210,12 +210,15 @@ python3 src/nela_runtime.py
 Expected output:
 
 ```
-# QUICKSORT    9/9 PASS
-# MERGESORT    9/9 PASS
-# STACK VM    12/12 PASS
-# WOLF GRID   17/17 PASS
+# QUICKSORT     9/9  PASS
+# MERGESORT     9/9  PASS
+# STACK VM     12/12 PASS
+# WOLF GRID    17/17 PASS
+# WOLF GAME    14/14 PASS
 Overall: ALL TESTS PASSED
 ```
+
+67 total test cases. Requires Python 3.10+. No external dependencies.
 
 Requires Python 3.10+. No external dependencies.
 
@@ -236,7 +239,7 @@ llm_coder/
 ├── src/
 │   ├── nela_parser.py           ML/Haskell-like syntax parser (.nela → dict AST)
 │   ├── nela_runtime.py          Surface language interpreter + test harness
-│   └── wolf_player.py           I/O-only harness: trig tables, keyboard, print
+│   └── wolf_player.py           I/O-only harness: keyboard input and terminal output only
 └── .github/
     ├── agents/
     │   └── llm-lang.agent.md    VS Code agent: LLM Language Architect
@@ -302,23 +305,34 @@ their rewrite rules are actually specified.
 
 ## v0.5 — Completed
 
-All v0.5 goals derived from the Wolfenstein port have been implemented:
-
 | Feature | Status | Notes |
 |---|---|---|
 | `%` modulo operator | ✅ done | `_parse_mul` + `op=="mod"` in runtime |
 | `/` integer division | ✅ done | `op=="div"` in runtime |
 | Unary `-` (negation) | ✅ done | `_parse_unary()` → `{"op":"neg","e":...}` |
 | Neg literals in arg position | ✅ done | Use `(-1)` paren syntax (Haskell convention) |
-| Fixed-point trig raycasting | ✅ done | Sin/cos tables passed as list args from Python |
+| Fixed-point trig raycasting | ✅ done | Sin/cos×64 tables passed as list args from Python |
 | Frame assembly in NELA-S | ✅ done | `shade_of`, `frame_cell`, `make_frame`, `render_frame` |
 | I/O-only Python harness | ✅ done | `wolf_player.py` — keyboard + print only |
 
-## v0.6 Roadmap
+## v0.6 — Completed
+
+Float literals and math builtins added. Python harness is now **strictly I/O** — zero precomputed data.
+
+| Feature | Status | Notes |
+|---|---|---|
+| `float` literals | ✅ done | `3.14`, `0.017453` etc. parsed to `{"op":"float","v":...}` |
+| `sin`/`cos`/`sqrt` builtins | ✅ done | Direct `math.sin`, `math.cos`, `math.sqrt` in runtime |
+| `floor`/`ceil`/`round`/`abs` builtins | ✅ done | Return Python `int` where applicable |
+| Eliminate sin/cos tables | ✅ done | `deg_to_rad` + `sin`/`cos` replace all `get_nth sin_tab a` calls |
+| Float positions in wolf_game | ✅ done | 1 unit = 1 cell; `is_wall` uses `floor` for grid lookup |
+| I/O-only Python harness | ✅ done | `wolf_player.py` — zero precomputed data, keyboard + print only |
+| Wolf Game test suite | ✅ done | 14 test cases covering trig, raycasting, game update |
+
+## v0.7 Roadmap
 
 | Feature | Motivation | Theory |
 |---|---|---|
-| `float` literals + `sin`/`cos` builtins | Eliminate Python trig tables; pure NELA-S trig | Add `Float` base type; trig as primitive agents |
 | `char` / `atom` type | Typed map cells (`'S'`, `'B'`, `' '`); string keys | Tagged integer / interned symbol; fits `⊕` sum type |
 | `IOToken` linear I/O | Mutable player state, door state, render side effects | `IO(A)` from Linear Logic; linear token enforces sequencing |
 | `Array n A` with O(1) index | Replace `head (drop n lst)` O(n) lookup | Sigma type `Σ(i:Fin n). A`; compiler maps to buffer |
