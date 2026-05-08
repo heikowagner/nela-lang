@@ -1,5 +1,5 @@
 """
-NELA Parser v0.7 — ML-style surface syntax
+NELA Parser v0.8 — ML-style surface syntax
 
 Grammar (informal):
   Program  ::= Def+
@@ -28,6 +28,11 @@ v0.7 additions:
   get  lst n   — O(1) list index:  get lst 2  (replaces head (drop n lst))
   ord  c       — char -> int:      ord 'A' = 65
   chr  n       — int  -> char:     chr 65  = 'A'
+
+v0.8 additions:
+  len  arr     — list length:      len arr
+  array n v    — fill list:        array 3 0  = [0, 0, 0]
+  aset arr i v — functional set:   aset arr 1 9  (returns new list)
 """
 
 import re
@@ -607,8 +612,8 @@ def _parse_unary(ts):
 
 _BUILTIN_UNARY = {"head", "tail", "fst", "snd", "not",
                    "sin", "cos", "sqrt", "floor", "ceil", "round", "abs",
-                   "ord", "chr"}
-_BUILTIN_BINARY = {"take", "drop", "append", "filter", "get"}
+                   "ord", "chr", "len"}
+_BUILTIN_BINARY = {"take", "drop", "append", "filter", "get", "array", "aset"}
 
 
 def _parse_apply(ts):
@@ -627,6 +632,11 @@ def _parse_apply(ts):
                 return {"op": name, "n": args[0], "e": args[1]}
             if name == "get" and len(args) == 2:
                 return {"op": "get", "e": args[0], "n": args[1]}
+            # array n v — fill; aset arr i v — functional update (v0.8)
+            if name == "array" and len(args) == 2:
+                return {"op": "array", "n": args[0], "v": args[1]}
+            if name == "aset" and len(args) == 3:
+                return {"op": "aset", "e": args[0], "n": args[1], "v": args[2]}
             return {"op": "call", "fn": name, "a": args}
         raise SyntaxError(f"Application of non-name {func!r}")
     return func

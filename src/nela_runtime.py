@@ -1,5 +1,5 @@
 """
-NELA Runtime v0.7 — surface language interpreter.
+NELA Runtime v0.8 — surface language interpreter.
 
 The NELA surface language is ML/Haskell-like syntax (.nela files).
 nela_parser.py converts .nela source text into the dict AST evaluated here.
@@ -8,7 +8,7 @@ not the surface representation.
 
 Supported ops:
   var, int, float, char, bool, nil, cons, match, call, let, if,
-  pair, fst, snd, head, tail, take, drop, get,
+  pair, fst, snd, head, tail, take, drop, get, len, array, aset,
   add, sub, mul, div, mod, neg,
   sin, cos, sqrt, floor, ceil, round, abs, ord, chr,
   eq, lt, le, gt, ge, and, or, not,
@@ -171,6 +171,19 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
         lst = eval_expr(expr["e"], env, defs)
         n   = int(eval_expr(expr["n"], env, defs))
         return lst[n]
+
+    # ── Array builtins (v0.8) ──────────────────────────────────────────────
+    if op == "array":
+        n = int(eval_expr(expr["n"], env, defs))
+        v = eval_expr(expr["v"], env, defs)
+        return [v] * n
+
+    if op == "aset":
+        lst = list(eval_expr(expr["e"], env, defs))   # copy
+        i   = int(eval_expr(expr["n"], env, defs))
+        v   = eval_expr(expr["v"], env, defs)
+        lst[i] = v
+        return lst
 
     if op == "and":
         return eval_expr(expr["l"], env, defs) and eval_expr(expr["r"], env, defs)
@@ -569,7 +582,55 @@ def digit_val c  = ord c - ord '0'
     print("#"*55)
     v7_pass = all(run_v7_test(lbl, fn, exp) for lbl, fn, exp in v7_cases)
 
-    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass and wg_pass and v7_pass
+    # ── v0.8 tests: array / aset / len / use_door ─────────────────────────────
+    _v8_src = """\
+def fill3z       = array 3 0
+def fill4one     = array 4 1
+def len3         = len (array 3 0)
+def set_first  a = aset a 0 9
+def set_last   a = aset a 2 9
+def set_mid    a = aset a 1 9
+def get_after  a = get (aset a 1 9) 1
+"""
+    _v8_prog = parse_program(_v8_src)
+
+    def _run_v8(fn, *args):
+        return run_program(_v8_prog, fn, *args)
+
+    v8_cases = [
+        ("array 3 0 = [0,0,0]",         lambda: _run_v8("fill3z"),            [0, 0, 0]),
+        ("array 4 1 = [1,1,1,1]",        lambda: _run_v8("fill4one"),          [1, 1, 1, 1]),
+        ("len (array 3 0) = 3",          lambda: _run_v8("len3"),              3),
+        ("aset [1,2,3] 0 9 = [9,2,3]",   lambda: _run_v8("set_first", [1,2,3]),[9, 2, 3]),
+        ("aset [1,2,3] 2 9 = [1,2,9]",   lambda: _run_v8("set_last",  [1,2,3]),[1, 2, 9]),
+        ("aset [1,2,3] 1 9 = [1,9,3]",   lambda: _run_v8("set_mid",   [1,2,3]),[1, 9, 3]),
+        ("get(aset arr 1 9) 1 = 9",       lambda: _run_v8("get_after", [1,2,3]), 9),
+        # use_door: player at (1.5,1.5) facing west (270) → cell index 8 is wall
+        ("use_door opens west wall",
+         lambda: run_program(wg_game_prog, "use_door",
+                             [1.5, 1.5, 270], MAP8, W8)[8],  0),
+        # use_door facing east (90) → cell index 10 is open; map unchanged
+        ("use_door on open cell noop",
+         lambda: run_program(wg_game_prog, "use_door",
+                             [1.5, 1.5, 90], MAP8, W8)[10], 0),
+    ]
+
+    def run_v8_test(label, got_fn, expected):
+        print(f"\n{'='*55}")
+        print(f"[v8: {label}]")
+        got = got_fn()
+        ok  = got == expected
+        print(f"  Expected:  {expected!r}")
+        print(f"  NELA:      {got!r}")
+        print(f"  Match:     {'PASS' if ok else 'FAIL'}")
+        return ok
+
+    print("\n" + "#"*55)
+    print("# V0.8 (array / aset / len / use_door)")
+    print("#"*55)
+    v8_pass = all(run_v8_test(lbl, fn, exp) for lbl, fn, exp in v8_cases)
+
+    all_pass = qs_pass and ms_pass and vm_pass and wolf_pass and wg_pass and v7_pass and v8_pass
     print(f"\n{'='*55}")
     print(f"Quicksort:  {'PASS' if qs_pass else 'FAIL'}")
     print(f"Mergesort:  {'PASS' if ms_pass else 'FAIL'}")
@@ -577,6 +638,8 @@ def digit_val c  = ord c - ord '0'
     print(f"Wolf Grid:  {'PASS' if wolf_pass else 'FAIL'}")
     print(f"Wolf Game:  {'PASS' if wg_pass else 'FAIL'}")
     print(f"V0.7:       {'PASS' if v7_pass else 'FAIL'}")
+    print(f"V0.8:       {'PASS' if v8_pass else 'FAIL'}")
     print(f"Overall:    {'ALL TESTS PASSED' if all_pass else 'SOME TESTS FAILED'}")
     sys.exit(0 if all_pass else 1)
+
 

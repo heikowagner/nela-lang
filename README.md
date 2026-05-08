@@ -105,7 +105,7 @@ Discrete DDA (cardinal directions), BFS reachability, no trig needed.
 scan_4 map 1 1 5  →  [3, 3, 1, 1]   (open corridor right/down, wall left/up)
 ```
 
-### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.7 — playable)*
+### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.8 — playable, doors)*
 
 Fully playable Wolfenstein raycaster. **All game logic is pure NELA-S.** Python is strictly I/O:
 raw keyboard and `print`. Zero precomputed data — no trig tables, no constants.
@@ -128,6 +128,7 @@ State: `[px, py, angle]` where `px`, `py` are floats.
 | `move_forward`, `move_back` | Float movement (0.2 cells/step) with collision |
 | `turn state delta` | Rotate by delta degrees; normalise |
 | `update state key map w` | Dispatch on key 0–3 → new state (no trig table args) |
+| `use_door state map w` | Step 1 cell in facing direction; `aset map idx 0` if wall, else noop |
 
 **Run the game:** `cd src && python3 wolf_player.py`  (W/S = move, A/D = turn, Q = quit)
 
@@ -225,12 +226,11 @@ Expected output:
 # WOLF GRID    17/17 PASS
 # WOLF GAME    14/14 PASS
 # V0.7         15/15 PASS
+# V0.8          9/9  PASS
 Overall: ALL TESTS PASSED
 ```
 
-76 total test cases. Requires Python 3.10+. No external dependencies.
-
-Requires Python 3.10+. No external dependencies.
+85 total test cases. Requires Python 3.10+. No external dependencies.
 
 ---
 
@@ -351,11 +351,22 @@ O(1) list indexing, character literals, and char↔int conversion.
 | `chr n` builtin | ✅ done | `chr 65` → `'A'` (int → char) |
 | wolf_game.nela O(1) map lookup | ✅ done | `map_get map idx = get map idx` (was `head (drop idx map)`) |
 
-## v0.8 Roadmap
+## v0.8 — Completed
+
+Array builtins (`array`, `aset`, `len`) and live map mutation via `use_door`.
+
+| Feature | Status | Notes |
+|---|---|---|
+| `array n v` builtin | ✅ done | Creates list of length `n` filled with `v`; `array 3 0` → `[0,0,0]` |
+| `aset arr i v` builtin | ✅ done | Functional update: returns copy with `arr[i] = v` |
+| `len arr` builtin | ✅ done | `len [1,2,3]` → `3` |
+| `use_door state map w` | ✅ done | Steps 1 cell forward; opens (sets 0) wall tile if present |
+| `'E'` key in wolf_player.py | ✅ done | Calls `use_door`; `map_data` is a mutable local copy |
+
+## v0.9 Roadmap
 
 | Feature | Motivation | Theory |
 |---|---|---|
 | `IOToken` linear I/O | Mutable state, sequenced side effects | `IO(A)` from Linear Logic; linear token enforces ordering |
-| `Array n A` with mutable set | O(1) write + typed size; replace flat lists for maps | Sigma type `Σ(i:Fin n). A`; compiler maps to mutable buffer |
 | NELA-C compiler | Formal verification + optimal parallel reduction | Interaction net graph; lowers NELA-S → NELA-C |
 

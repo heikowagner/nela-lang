@@ -1,9 +1,11 @@
--- NELA v0.7 — Wolfenstein raycaster (float positions, direct sin/cos, O(1) get)
+-- NELA v0.8 — Wolfenstein raycaster + mutable map (array/aset)
 --
--- v0.7 vs v0.6:
---   + char literals 'x' and ord/chr builtins added to NELA-S
---   + get lst n  — O(1) list index (replaces head (drop n lst))
---   - map_get now uses get instead of head (drop idx map)
+-- v0.8 vs v0.7:
+--   + array n v  — create list of n elements all equal to v
+--   + aset arr i v  — functional update: return new list with index i set to v
+--   + len arr    — list length
+--   + use_door state map w  — open the wall directly in front of the player
+--   State is still [px, py, angle]; map is passed/returned separately.
 --
 -- Coordinate system:
 --   Positions: float, 1 unit = 1 grid cell.
@@ -151,4 +153,38 @@ def update state key map w =
   else if key == 2 then turn state (-5)
   else if key == 3 then turn state 5
   else state
+
+-- ── Door / cell mutation (v0.8) ──────────────────────────────────────────────
+--
+-- Open (remove) the wall cell directly in front of the player.
+-- Returns the updated map.  Caller stores the new map alongside state.
+-- 'e' key in wolf_player.py triggers this; non-wall cells are a no-op.
+
+def use_door state map w =
+  let px  = state_px    state in
+  let py  = state_py    state in
+  let a   = state_angle state in
+  let rad = deg_to_rad a in
+  let tx  = floor (px + sin rad) in
+  let ty  = floor (py + cos rad) in
+  if is_wall map tx ty w == 1
+  then aset map (tx + ty * w) 0
+  else map
+
+-- ── Door / cell mutation (v0.8) ──────────────────────────────────────────────
+--
+-- Open (remove) the wall cell directly in front of the player.
+-- Returns the updated map.  Caller stores the new map alongside state.
+-- 'e' key in wolf_player.py triggers this; non-wall cells are a no-op.
+
+def use_door state map w =
+  let px  = state_px    state in
+  let py  = state_py    state in
+  let a   = state_angle state in
+  let rad = deg_to_rad a in
+  let tx  = floor (px + sin rad) in
+  let ty  = floor (py + cos rad) in
+  if is_wall map tx ty w == 1
+  then aset map (tx + ty * w) 0
+  else map
 
