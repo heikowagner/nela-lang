@@ -262,9 +262,60 @@ llm_coder/
     └── skills/
         ├── nela-foundations/
         │   └── SKILL.md         Mathematical foundations (Interaction Nets, LL, DTT)
+        ├── nela-headers/
+        │   └── SKILL.md         Reusable section-header and synchronization standard
         └── nela-tools/
             └── SKILL.md         Toolchain spec (interpreter, compiler, type checker)
 ```
+
+---
+
+## Start a New NELA Project
+
+Use this repository as a template for new NELA projects by splitting assets into reusable
+infrastructure and project-specific files.
+
+### 1) Copy Reusable Infrastructure
+
+Copy these directories/files into the new repo:
+
+- `.github/agents/llm-lang.agent.md`
+- `.github/skills/nela-foundations/SKILL.md`
+- `.github/skills/nela-tools/SKILL.md`
+- `.github/skills/nela-headers/SKILL.md`
+- `src/nela_parser.py`
+- `src/nela_runtime.py`
+- `src/nela_compiler.py`
+- `tools/validate_nela_header.py`
+- `Makefile`
+
+### 2) Create Project-Specific Files Fresh
+
+Create these for the new domain instead of copying Wolf-specific content verbatim:
+
+- `.instructions.md` (project workflow and constraints)
+- `README.md` (project mission and architecture)
+- `examples/*.nela` (new source programs)
+- Optional host harness under `src/` (for example, a game or CLI bridge)
+
+### 3) Add Your First NELA Module
+
+Create a new file in `examples/` and follow the header standard from
+`.github/skills/nela-headers/SKILL.md`.
+
+Minimum workflow:
+
+```bash
+make check-header
+make fix-header
+make test
+```
+
+### 4) Keep Responsibilities Clean
+
+- `.github/skills/*`: reusable standards and domain/toolchain knowledge.
+- `.github/agents/*`: reusable agent behavior/persona.
+- `.instructions.md`: project-specific editing and review policy.
 
 ---
 

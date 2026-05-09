@@ -1,12 +1,39 @@
--- NELA 0.4 — stack-based virtual machine
--- Same model as CPython, JVM, WebAssembly
+-- ============================================================================
+-- NELA v0.4 — Stack-Based Virtual Machine
+-- LLM-OPTIMIZED MULTI-SECTION FILE
+-- ============================================================================
 --
--- Instruction encoding (tagged lists):
---   PUSH n = [0, n]   ADD = [1]   SUB = [2]   MUL = [3]
---   NEG    = [4]       DUP = [5]   SWAP = [6]
+-- SECTION INDEX FOR LLM NAVIGATION (auto-maintained):
+--   SECTION_RUNTIME      [26- 64]      vm_run
+--   SECTION_EVAL         [66- 75]      vm_eval
 --
--- SUB:  pops a (top), b (below); pushes b - a
--- SWAP: pops a (top), b (below); pushes a then b  (b ends on top)
+-- ARCHITECTURE:
+--   Bytecode VM similar to CPython, JVM, WebAssembly
+--   Stack-based: all values pushed/popped, no registers
+--   Instruction encoding: tagged lists [opcode, arg*, ...]
+--
+-- Supported Operations:
+--   PUSH  [0, n]   — push literal n
+--   ADD   [1]      — pop a,b; push b+a
+--   SUB   [2]      — pop a,b; push b-a
+--   MUL   [3]      — pop a,b; push b*a
+--   NEG   [4]      — pop a; push -a
+--   DUP   [5]      — duplicate top of stack
+--   SWAP  [6]      — swap top two elements
+--
+-- COORDINATES: N/A (VM emulator; not game logic)
+--
+-- ── @SECTION_RUNTIME [26-64] ──────────────────────────────────────────────────
+-- Functions: vm_run
+-- Purpose: Execute bytecode program on stack
+-- Called_by: vm_eval, test suite
+-- Key_vars: [program, stack, opc, a, b]
+-- Details:
+--   - Program is list of instructions; stack is working memory
+--   - Dispatch on opcode (head of instruction)
+--   - Each operation: pop args, compute, push result
+--   - Base case: empty program returns current stack
+--   - Result: stack with values in reverse order (TOS first)
 
 -- vm_run : List(Instr) -> List(Int) -> List(Int)
 def vm_run program stack =
@@ -38,6 +65,16 @@ def vm_run program stack =
         let b = head (tail stack) in
         vm_run rest (b :: a :: tail (tail stack))
       else stack
+
+-- ── @SECTION_EVAL [66-75] ─────────────────────────────────────────────────────
+-- Functions: vm_eval
+-- Purpose: Execute bytecode program starting with empty stack; return result
+-- Called_by: test suite (nela_runtime.py)
+-- Key_vars: [program]
+-- Details:
+--   - Convenience wrapper around vm_run
+--   - Initialize with empty stack []
+--   - Extract result: head of final stack (top of stack)
 
 -- vm_eval : List(Instr) -> Int
 -- Run on empty stack; return top of final stack

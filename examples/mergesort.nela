@@ -1,4 +1,31 @@
--- NELA 0.4 — mergesort
+-- ============================================================================
+-- NELA v0.4 — Mergesort Algorithm
+-- LLM-OPTIMIZED MULTI-SECTION FILE
+-- ============================================================================
+--
+-- SECTION INDEX FOR LLM NAVIGATION (auto-maintained):
+--   SECTION_SPLIT       [ 18- 24]      split
+--   SECTION_MERGE       [ 26- 36]      merge
+--   SECTION_MERGESORT   [ 38- 44]      mergesort
+--
+-- ARCHITECTURE:
+--   Divide-and-conquer sorting via binary splitting + balanced merging
+--   Pattern: split list in half → recursively sort → merge results
+--   No imperative loops; pure functional composition with tuples
+--   Runs in Python test suite as reference implementation
+--
+-- COORDINATES: N/A (sorting algorithm; not game logic)
+--
+-- ── @SECTION_SPLIT [18-24] ────────────────────────────────────────────────────
+-- Functions: split
+-- Purpose: Partition list into two halves via alternating interleave
+-- Called_by: mergesort
+-- Key_vars: [lst, h, h2, t, l, r]
+-- Details:
+--   - Interleave indexing: even indices → left, odd indices → right
+--   - Single element list: left=[h], right=[]
+--   - Base case: empty list returns ([], [])
+--   - Returns tuple (left, right)
 
 -- split : List(Nat) -> (List(Nat), List(Nat))
 -- Split by interleaving: even-indexed -> left, odd-indexed -> right
@@ -8,6 +35,16 @@ def split lst =
   | [h]       = ([h], [])
   | h::h2::t  = let (l, r) = split t in (h::l, h2::r)
 
+-- ── @SECTION_MERGE [26-36] ────────────────────────────────────────────────────
+-- Functions: merge
+-- Purpose: Merge two sorted lists into one sorted list
+-- Called_by: mergesort
+-- Key_vars: [a, b, ha, hb, ta, tb]
+-- Details:
+--   - Compare heads of both lists
+--   - Pick smaller; recurse on tail + other list
+--   - Base case: if one list empty, append the other
+
 -- merge : List(Nat) -> List(Nat) -> List(Nat)
 def merge a b =
   match (a, b)
@@ -16,6 +53,17 @@ def merge a b =
   | (ha::ta, hb::tb)  = if ha <= hb
                         then ha :: merge ta b
                         else hb :: merge a  tb
+
+-- ── @SECTION_MERGESORT [38-44] ────────────────────────────────────────────────
+-- Functions: mergesort
+-- Purpose: Sort integer list using mergesort algorithm
+-- Called_by: test suite (nela_runtime.py)
+-- Key_vars: [lst, l, r]
+-- Details:
+--   - Base cases: empty [] and singleton [h] already sorted
+--   - Split list in half using split()
+--   - Recursively sort left and right halves
+--   - Merge sorted sublists via merge()
 
 -- mergesort : List(Nat) -> List(Nat)
 def mergesort lst =

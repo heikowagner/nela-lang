@@ -1,5 +1,29 @@
--- NELA 0.4 — quicksort
--- qs : List(Nat) -> List(Nat)
+-- ============================================================================
+-- NELA v0.4 — Quicksort Algorithm
+-- LLM-OPTIMIZED SINGLE-SECTION FILE
+-- ============================================================================
+--
+-- SECTION INDEX FOR LLM NAVIGATION (auto-maintained):
+--   SECTION_QUICKSORT    [ 17- 24]      qs
+--
+-- ARCHITECTURE:
+--   Single recursive sorting function: qs
+--   Pattern: divide (by pivot), conquer (sort sub-lists), combine (concatenate)
+--   No imperative loops; pure functional composition
+--   Runs in Python test suite as reference implementation
+--
+-- COORDINATES: N/A (sorting algorithm; not game logic)
+--
+-- ── @SECTION_QUICKSORT [17-24] ────────────────────────────────────────────────
+-- Functions: qs
+-- Purpose: Sort integer list using quicksort algorithm
+-- Called_by: test suite (nela_runtime.py)
+-- Key_vars: [lst, h, t]
+-- Details:
+--   - Partition: h (pivot) vs. elements <= h (left), > h (right)
+--   - Recursively sort left and right sublists
+--   - Concatenate: left ++ [pivot] ++ right
+--   - Base case: empty list returns empty
 
 def qs lst =
   match lst

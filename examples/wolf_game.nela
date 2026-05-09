@@ -1,33 +1,60 @@
--- NELA v0.10 — Wolfenstein raycaster + score tracking
+-- ============================================================================
+-- NELA v0.11 — Wolfenstein raycaster + enemies + textures
+-- LLM-OPTIMIZED SINGLE-FILE ARCHITECTURE
+-- ============================================================================
+-- 
+-- SECTION INDEX FOR LLM NAVIGATION (auto-maintained):
+--   SECTION_TRIG                 [ 51- 65]      deg_to_rad | norm_angle
+--   SECTION_MAP                  [ 67- 80]      map_get | is_wall
+--   SECTION_STATE                [ 82- 90]      state_px | state_py | state_angle
+--   SECTION_RAYCASTING           [ 92-165]      ray_march | enemy_hit_point | ray_march_kind | render_col_data | render_cols_data
+--   SECTION_TEXTURES             [167-240]      shade_of | tex_size | tex_brick | tex_planks | tex_metal | wall_tex_id | wrap16 | tex_pick | tex_sample
+--   SECTION_FRAME                [242-300]      cap | frame_cell | frame_row | make_frame | render_frame
+--   SECTION_MOVEMENT             [302-355]      try_move | move_forward | move_back | turn
+--   SECTION_GAME                 [357-380]      update | key_action
+--   SECTION_DOOR                 [382-395]      use_door
+--   SECTION_ENEMIES              [397-470]      enemy_x | enemy_y | enemy_alert | dist | enemy_step_toward | update_enemy | update_enemies | is_wall_fat | los_clear | enemy_visible | visible_enemies
+--   SECTION_MINIMAP              [472-510]      enemy_cell | minimap_cell | minimap_row | build_minimap | init_enemies
+--   SECTION_MAIN                 [512-541]      render_packet | game_loop_rec | game_loop
 --
--- v0.10 (NEW):
---   + build_minimap()       — compute 8×8 grid showing walls/player
---   + doors_count tracking  — increment when door successfully opened
---   + steps_count tracking  — increment on each forward/back/turn movement
---   + game_loop returns     — [frame, doors_opened, steps_taken, minimap]
---   Mission: All game logic stays in NELA-S. Python is I/O-only.
+-- ARCHITECTURE:
+--   Mission: ALL game logic in NELA-S. Python is I/O-only (framebuffer + input).
+--   State: [px, py, angle] (px,py floats; angle int [0,359])
+--   Map: flat list, 1D index = x + y*w
+--   Render Output: 40x21 grid of shade IDs [0-13]:
+--     0=ceiling, 1=floor, 2-4=wall (shade), 5=enemy, 6-13=textured walls
+--   I/O Model: IOToken linear threading (io_print/io_key callbacks)
+--   Textures: 3x 16x16 quantized shade tables (brick/planks/metal)
+--   Enemies: [x, y, alert] with LOS+patrol AI, rendering as red shade-5 pixels
 --
--- v0.9 vs v0.8:
---   + io_key token        — read a keypress through a linear I/O token
---   + io_print frame tok  — print a frame, return new token
---   + key_action c        — map char → action code (NELA-S, not Python)
---   + game_loop state map w token  — full game loop in NELA-S
---   Python harness now only provides: _getch callback, _print_frame callback
+-- INVARIANTS (LLM enforces when editing):
+--   - All functions must be declared before use (no forward refs)
+--   - All game logic stays in NELA-S (no Python sprite code)
+--   - Texture lookups stay in frame_cell (no external rendering)
+--   - Enemy LOS uses fat-wall checks is_wall_fat (not raycasting)
+--   - Coordinates: floats for position, ints for grid indices, angles normalized [0,359]
+--   - After edits, update the index comments above to match current line numbers
 --
--- v0.8 vs v0.7:
---   + array n v  — create list of n elements all equal to v
---   + aset arr i v  — functional update: return new list with index i set to v
---   + len arr    — list length
---   + use_door state map w  — open the wall directly in front of the player
+-- VERSION HISTORY:
+--   v0.11: Enemies + minimap + textures + LLM-optimized header
+--   v0.10: doors/steps tracking + render_packet
+--   v0.9:  IOToken game_loop (all logic in NELA-S)
+--   v0.8:  array/aset/use_door
+--   v0.7:  raycasting baseline
 --
--- Coordinate system:
---   Positions: float, 1 unit = 1 grid cell.
---   Angles:    integers 0..359 degrees.
---   angle 0  → south (+y), 90 → east (+x), 180 → north (-y), 270 → west (-x)
---
--- State: [px, py, angle]  (px,py floats, angle int)
+-- COORDINATE SYSTEM:
+--   Position:  float units (1 cell = 1.0)
+--   Angles:    integer degrees [0, 359]
+--     angle 0   → south (+y)
+--     angle 90  → east  (+x)
+--     angle 180 → north (-y)
+--     angle 270 → west  (-x)
 
--- ── Trig utilities ────────────────────────────────────────────────────────────
+-- ── @SECTION_TRIG [51-65] ────────────────────────────────────────────────────
+-- Functions: deg_to_rad, norm_angle
+-- Purpose: Angle conversion (degrees ↔ radians); normalize angles to [0,359]
+-- Called_by: render_col_data, move_forward, move_back, use_door, game_loop_rec
+-- Key_vars: [a, rad]
 
 -- pi/180 as a float literal
 def deg_to_rad a = a * 0.017453292519943295
@@ -38,21 +65,42 @@ def norm_angle a =
   else if a < 0 then norm_angle (a + 360)
   else a
 
--- ── Map primitives ────────────────────────────────────────────────────────────
+-- ── @SECTION_MAP [67-80] ──────────────────────────────────────────────────────
+-- Functions: map_get, is_wall
+-- Purpose: Map cell access; terrain collision detection
+-- Calls: get (builtin)
+-- Called_by: ray_march, ray_march_kind, try_move, use_door, los_clear, is_wall_fat, visible_enemies, minimap_cell
+-- Key_vars: [map, idx, x, y, w]
 
 def map_get map idx = get map idx
 
 -- is_wall takes float x,y: floor to grid cell first
 def is_wall map x y w = map_get map ((floor x) + (floor y) * w)
 
--- ── State accessors  state = [px, py, angle] ─────────────────────────────────
+-- ── @SECTION_STATE [82-90] ────────────────────────────────────────────────────
+-- Functions: state_px, state_py, state_angle
+-- Purpose: Extract player state fields: [px, py, angle]
+-- Calls: head, tail (builtin)
+-- Called_by: move_forward, move_back, turn, update, use_door, game_loop_rec
+-- Key_vars: [state, px, py, angle]
 
 def state_px    state = head state
 def state_py    state = head (tail state)
 def state_angle state = head (tail (tail state))
 
--- ── Fixed-point ray marcher ───────────────────────────────────────────────────
---
+-- ── @SECTION_RAYCASTING [92-165] ─────────────────────────────────────────────
+-- Functions: ray_march, ray_march_kind, enemy_hit_point, render_col_data, render_cols_data
+-- Purpose: Core raycasting engine; wall/enemy hit detection; column rendering
+-- Calls: is_wall, is_wall_fat, enemy_hit_point
+-- Called_by: render_frame, visible_enemies (for LOS via ray_march_kind)
+-- Key_vars: [rx, ry, dx, dy, limit, kind, dist, col_idx, half_fov]
+-- Details:
+--   - step size: 0.05 cells
+--   - wall height formula: floor(21 / ((dist+1) * 0.05))
+--   - enemy detection: distance < 0.22 from ray
+--   - returns [kind, dist] where kind=0 (wall) or 1 (enemy)
+
+-- Fixed-point ray marcher
 -- Positions in cell units (float).  Step size: 0.05 cells.
 -- Returns step count to first wall (limit = max steps, typically 400).
 
@@ -62,31 +110,67 @@ def ray_march map w rx ry dx dy limit =
     if is_wall map rx ry w == 1 then 0
     else 1 + ray_march map w (rx + dx) (ry + dy) dx dy (limit - 1)
 
--- ── Single column rendering ───────────────────────────────────────────────────
---
 -- Wall height = floor(21 / ((dist + 1) * 0.05))
 -- At 1 cell (dist≈20): height ≈ 20 rows.  At 5 cells (dist≈100): ≈ 4 rows.
 
-def render_col map w px py ray_angle =
+def enemy_hit_point enemies x y =
+  match enemies
+  | [] = 0
+  | e::t =
+    if dist x y (enemy_x e) (enemy_y e) < 0.22 then 1
+    else enemy_hit_point t x y
+
+-- Returns [kind, dist_steps]
+-- kind: 0=wall/background ray stop, 1=enemy hit before wall
+
+def ray_march_kind map w enemies rx ry dx dy limit =
+  if limit == 0 then 0 :: 400 :: []
+  else
+    if is_wall map rx ry w == 1 then 0 :: 0 :: []
+    else
+      if enemy_hit_point enemies rx ry == 1 then 1 :: 0 :: []
+      else
+        let r = ray_march_kind map w enemies (rx + dx) (ry + dy) dx dy (limit - 1) in
+        let k = head r in
+        let d = head (tail r) in
+        k :: (d + 1) :: []
+
+-- Returns [kind, height]
+def render_col_data map w enemies px py ray_angle =
   let a    = norm_angle ray_angle in
   let rad  = deg_to_rad a in
   let dx   = sin rad * 0.05 in
   let dy   = cos rad * 0.05 in
-  let dist = ray_march map w px py dx dy 400 in
-  floor (21.0 / ((dist + 1) * 0.05))
+  let hit  = ray_march_kind map w enemies px py dx dy 400 in
+  let kind = head hit in
+  let dist = head (tail hit) in
+  let h    = floor (21.0 / ((dist + 1) * 0.05)) in
+  kind :: h :: []
 
 -- ── All columns (col_idx starts at 0) ────────────────────────────────────────
 
-def render_cols map w px py angle half_fov ncols col_idx =
+def render_cols_data map w enemies px py angle half_fov ncols col_idx =
   if col_idx == ncols then []
   else
     let ray_angle = angle - half_fov + col_idx in
-    let h = render_col map w px py ray_angle in
-    h :: render_cols map w px py angle half_fov ncols (col_idx + 1)
+    let c = render_col_data map w enemies px py ray_angle in
+    c :: render_cols_data map w enemies px py angle half_fov ncols (col_idx + 1)
 
--- ── Frame assembly ────────────────────────────────────────────────────────────
--- (unchanged from v0.5 — returns shade integers 0=ceil,1=floor,2-4=wall)
+-- ── @SECTION_TEXTURES [167-240] ──────────────────────────────────────────────
+-- Functions: shade_of, tex_brick, tex_planks, tex_metal, wall_tex_id, wrap16, tex_pick, tex_sample
+-- Purpose: Texture data (16x16 quantized tables); texture sampling on walls
+-- Calls: wrap16, tex_pick, get (builtin)
+-- Called_by: frame_cell, tex_sample
+-- Key_vars: [tex_id, u, v, shade, col_idx]
+-- Details:
+--   - shade_of: wall height to shade ID mapping (2-4 based on screen height)
+--   - tex_brick/planks/metal: 16x16 arrays; each cell is shade ID 6-13
+--   - wall_tex_id: map column index to texture ID (deterministic)
+--   - wrap16: recursive modulo for safe negative/overflow handling
+--   - tex_pick: select texture function by ID
+--   - tex_sample: lookup shade from texture at (u,v) coordinates
 
+-- Frame assembly: shade_of maps wall height to brightness levels
 def shade_of h screen_h =
   let q3 = screen_h * 3 / 4 in
   let q2 = screen_h / 2     in
@@ -94,37 +178,148 @@ def shade_of h screen_h =
   else if h >= q2 then 3
   else 2
 
-def frame_cell row col_h mid screen_h =
-  let half = col_h / 2 in
-  let dist = if row >= mid then row - mid else mid - row in
-  if dist <= half then shade_of col_h screen_h
-  else if row < mid then 0
-  else 1
+-- AUTO-GENERATED by tools/build_wolf_textures.py
+-- Source textures: ambientCG CC0 (Creative Commons Zero)
+def tex_size = 16
+
+def tex_brick _ =
+[
+  [9, 9, 9, 9, 9, 8, 9, 9, 9, 8, 9, 9, 9, 9, 9, 9],
+  [9, 9, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 10, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [10, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 10, 9, 9, 10, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [9, 10, 9, 9, 9, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 8, 8, 9, 9],
+  [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 10, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+  [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 9, 9, 9]
+]
+
+def tex_planks _ =
+[
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 7, 7, 7, 7, 7, 7],
+  [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+  [8, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+]
+
+def tex_metal _ =
+[
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+  [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
+]
+
+def wall_tex_id col =
+  if col < 13 then 0
+  else if col < 26 then 1
+  else 2
+
+def wrap16 n =
+  if n >= 16 then wrap16 (n - 16)
+  else if n < 0 then wrap16 (n + 16)
+  else n
+
+def tex_pick tex_id =
+  if tex_id == 0 then tex_brick 0
+  else if tex_id == 1 then tex_planks 0
+  else tex_metal 0
+
+def tex_sample tex_id u v =
+  let tex = tex_pick tex_id in
+  let row = get tex (wrap16 v) in
+  get row (wrap16 u)
+
+-- ── @SECTION_FRAME [242-300] ─────────────────────────────────────────────────
+-- Functions: frame_cell, frame_row, make_frame, render_frame, cap
+-- Purpose: Frame buffer assembly; map column data to 40x21 grid of shade IDs
+-- Calls: render_cols_data, tex_sample, wall_tex_id, cap
+-- Called_by: render_frame, game_loop_rec
+-- Key_vars: [frame, row, col, shade_id, mid, screen_h, col_idx]
+-- Details:
+--   - frame_cell: determine shade ID for single pixel based on wall height + texture
+--   - frame_row: render all pixels in one row
+--   - make_frame: build full frame recursively row-by-row
+--   - render_frame: orchestrate raycasting + frame assembly
+--   - cap: clamp wall height to screen height
 
 def cap h limit =
   if h > limit then limit else h
 
-def frame_row heights row mid screen_h =
-  match heights
-  | [] = []
-  | h::t =
-    let ch = cap h screen_h in
-    frame_cell row ch mid screen_h :: frame_row t row mid screen_h
+def frame_cell row col_h col_kind mid screen_h col_idx =
+  let half = col_h / 2 in
+  let dist = if row >= mid then row - mid else mid - row in
+  if dist <= half then
+    if col_kind == 1 then 5
+    else tex_sample (wall_tex_id col_idx) col_idx row
+  else if row < mid then 0
+  else 1
 
-def make_frame heights screen_h row =
+def frame_row cols row mid screen_h col_idx =
+  match cols
+  | [] = []
+  | c::t =
+    let k = head c in
+    let h = head (tail c) in
+    let ch = cap h screen_h in
+    frame_cell row ch k mid screen_h col_idx :: frame_row t row mid screen_h (col_idx + 1)
+
+def make_frame cols screen_h row =
   if row == screen_h then []
   else
     let mid = screen_h / 2 in
-    frame_row heights row mid screen_h :: make_frame heights screen_h (row + 1)
+    frame_row cols row mid screen_h 0 :: make_frame cols screen_h (row + 1)
 
 -- render_frame: one call returns a complete list-of-rows of shade integers.
 -- No trig tables needed — sin/cos computed directly.
 
-def render_frame map w px py angle half_fov ncols screen_h =
-  let heights = render_cols map w px py angle half_fov ncols 0 in
-  make_frame heights screen_h 0
+def render_frame map w enemies px py angle half_fov ncols screen_h =
+  let cols = render_cols_data map w enemies px py angle half_fov ncols 0 in
+  make_frame cols screen_h 0
 
--- ── Movement with collision detection ────────────────────────────────────────
+-- ── @SECTION_MOVEMENT [302-355] ──────────────────────────────────────────────
+-- Functions: try_move, move_forward, move_back, turn
+-- Purpose: Player movement with collision detection; rotation
+-- Calls: state_px, state_py, state_angle, deg_to_rad, norm_angle, is_wall, sin, cos
+-- Called_by: update
+-- Key_vars: [nx, ny, speed, old_px, old_py, delta]
+-- Details:
+--   - try_move: check if (nx,ny) is walkable; return updated state or old state
+--   - move_forward/move_back: compute delta from angle, call try_move
+--   - turn: rotate angle by delta degrees, normalize to [0,359]
+--   - collision: any wall check prevents move
 
 def try_move map w nx ny old_px old_py angle =
   if is_wall map nx ny w == 1
@@ -155,10 +350,16 @@ def turn state delta =
   let a  = state_angle state in
   px :: py :: norm_angle (a + delta) :: []
 
--- ── Game update ───────────────────────────────────────────────────────────────
---
--- key: 0 = forward   1 = backward   2 = turn-left   3 = turn-right
--- No trig tables in signature: sin/cos computed directly inside move_*.
+-- ── @SECTION_GAME [357-380] ───────────────────────────────────────────────────
+-- Functions: update, key_action
+-- Purpose: Player input handling; map actions to state updates
+-- Calls: move_forward, move_back, turn, is_wall
+-- Called_by: game_loop_rec
+-- Key_vars: [action, key, state, map, w]
+-- Details:
+--   - key_action: char ('w','s','a','d','e','q') → action code (0-6)
+--   - update: apply action to state with collision detection
+--   - action codes: 0=fwd, 1=back, 2=left, 3=right, 4=door, 5=quit, 6=unknown
 
 def update state key map w =
   if key == 0 then move_forward map w state 0.2
@@ -166,29 +367,6 @@ def update state key map w =
   else if key == 2 then turn state (-5)
   else if key == 3 then turn state 5
   else state
-
--- ── Door / cell mutation (v0.8) ──────────────────────────────────────────────
---
--- Open (remove) the wall cell directly in front of the player.
--- Returns the updated map.  Caller stores the new map alongside state.
--- 'e' key in wolf_player.py triggers this; non-wall cells are a no-op.
-
-def use_door state map w =
-  let px  = state_px    state in
-  let py  = state_py    state in
-  let a   = state_angle state in
-  let rad = deg_to_rad a in
-  let tx  = floor (px + sin rad) in
-  let ty  = floor (py + cos rad) in
-  if is_wall map tx ty w == 1
-  then aset map (tx + ty * w) 0
-  else map
-
--- ── Key mapping (v0.9) ──────────────────────────────────────────────────────
---
--- Maps raw char → action code:
---   0 = forward  1 = backward  2 = turn-left  3 = turn-right
---   4 = door     5 = quit      6 = unknown
 
 def key_action c =
   if c == 'w' then 0
@@ -205,63 +383,213 @@ def key_action c =
   else if c == 'Q' then 5
   else 6
 
--- ── Minimap generation (v0.9+) ─────────────────────────────────────────────
--- Minimap is an 8×8 grid where:
---   0 = open space
---   1 = wall
---   2 = player location
+-- ── @SECTION_DOOR [382-395] ───────────────────────────────────────────────────
+-- Functions: use_door
+-- Purpose: Open (remove) wall cell directly in front of player
+-- Calls: state_px, state_py, state_angle, deg_to_rad, floor, is_wall, aset
+-- Called_by: game_loop_rec
+-- Key_vars: [tx, ty, door_cell]
+-- Details:
+--   - target: cell directly ahead (computed from angle)
+--   - if target is wall: set map cell to 0 (open)
+--   - if not wall: no-op (returns same map)
+--   - returns updated map (caller manages state separately)
 
-def minimap_cell map w px py grid_x grid_y =
-  let px_floor = floor px in
-  let py_floor = floor py in
-  let cell_val = get map (grid_x + grid_y * w) in
-  if grid_x == px_floor then
-    if grid_y == py_floor then 2
-    else if cell_val == 1 then 1
-    else 0
-  else if cell_val == 1 then 1
+def use_door state map w =
+  let px  = state_px    state in
+  let py  = state_py    state in
+  let a   = state_angle state in
+  let rad = deg_to_rad a in
+  let tx  = floor (px + sin rad) in
+  let ty  = floor (py + cos rad) in
+  if is_wall map tx ty w == 1
+  then aset map (tx + ty * w) 0
+  else map
+
+-- ── @SECTION_ENEMIES [397-470] ────────────────────────────────────────────────
+-- Functions: enemy_x, enemy_y, enemy_alert, dist, enemy_step_toward, update_enemy, update_enemies, is_wall_fat, los_clear, enemy_visible, visible_enemies
+-- Purpose: Enemy AI, collision, visibility testing; LOS checking
+-- Calls: dist, is_wall, enemy_step_toward, los_clear, ray_march_kind (legacy)
+-- Called_by: ray_march_kind, update_enemies, visible_enemies, game_loop_rec, minimap_cell
+-- Key_vars: [ex, ey, al, nx, ny, px, py, tx, ty, alert, los, visible]
+-- Details:
+--   - enemy_x/y/alert: field accessors for [x, y, alert] tuple
+--   - dist: euclidean distance between two points
+--   - enemy_step_toward: move toward target; stop if wall blocking
+--   - update_enemy: alert hysteresis (distance thresholds); chase if alert
+--   - is_wall_fat: 5-point wall check (center + 4 neighbors) for conservative LOS
+--   - los_clear: recursive point sampling along ray; return 1 if unobstructed
+--   - enemy_visible: check if enemy is visible to player (LOS + distance)
+--   - visible_enemies: filter enemy list to only those player can see
+-- Enemy representation: [x, y, alert]
+-- Minimap cell values: 0=open, 1=wall, 2=player, 3=enemy-alert, 4=enemy-idle
+
+def enemy_x e = get e 0
+def enemy_y e = get e 1
+def enemy_alert e = get e 2
+
+def dist x1 y1 x2 y2 =
+  let dx = x2 - x1 in
+  let dy = y2 - y1 in
+  sqrt (dx * dx + dy * dy)
+
+def enemy_step_toward map w ex ey tx ty speed =
+  let d = dist ex ey tx ty in
+  if d == 0 then ex :: ey :: []
+  else
+    let nx = ex + ((tx - ex) / d) * speed in
+    let ny = ey + ((ty - ey) / d) * speed in
+    if is_wall map nx ny w == 1 then ex :: ey :: []
+    else nx :: ny :: []
+
+def update_enemy enemy px py map w =
+  let ex = enemy_x enemy in
+  let ey = enemy_y enemy in
+  let al = enemy_alert enemy in
+  let d  = dist ex ey px py in
+  let al2 = if d < 2.6 then 1 else if d > 3.4 then 0 else al in
+  let pos = if al2 == 1 then enemy_step_toward map w ex ey px py 0.08 else ex :: ey :: [] in
+  let nx = get pos 0 in
+  let ny = get pos 1 in
+  nx :: ny :: al2 :: []
+
+def update_enemies enemies px py map w =
+  match enemies
+  | [] = []
+  | e::t = update_enemy e px py map w :: update_enemies t px py map w
+
+def is_wall_fat map w x y =
+  if is_wall map x y w == 1 then 1
+  else if is_wall map (x + 0.08) y w == 1 then 1
+  else if is_wall map (x - 0.08) y w == 1 then 1
+  else if is_wall map x (y + 0.08) w == 1 then 1
+  else if is_wall map x (y - 0.08) w == 1 then 1
   else 0
 
-def minimap_row map w px py grid_y col =
-  if col == w then []
+def los_clear map w px py ex ey i n =
+  if i >= n then 1
   else
-    let cell = minimap_cell map w px py col grid_y in
-    cell :: minimap_row map w px py grid_y (col + 1)
+    let t = i / n in
+    let sx = px + (ex - px) * t in
+    let sy = py + (ey - py) * t in
+    if is_wall_fat map w sx sy == 1 then 0
+    else los_clear map w px py ex ey (i + 1) n
 
-def build_minimap map w px py row =
-  if row == w then []
+def enemy_visible map w px py enemy =
+  let ex = enemy_x enemy in
+  let ey = enemy_y enemy in
+  let d = dist px py ex ey in
+  if d < 0.05 then 1
   else
-    let row_cells = minimap_row map w px py row 0 in
-    row_cells :: build_minimap map w px py (row + 1)
+    let n = floor (d * 8.0) + 8 in
+    los_clear map w px py ex ey 1 n
 
--- ── IOToken-based game loop with stats (v0.9+) ───────────────────────────────
---
--- Returns: [frame, doors_opened, steps_count, minimap]
--- token consumed/produced internally; game_loop interface hides IOToken linearity
+def visible_enemies enemies map w px py =
+  match enemies
+  | [] = []
+  | e::t =
+    let rest = visible_enemies t map w px py in
+    if enemy_visible map w px py e == 1 then e :: rest
+    else rest
 
-def game_loop_rec state map w doors steps token =
-  let frame  = render_frame map w (get state 0) (get state 1) (get state 2) 20 40 21 in
-  let tok1   = io_print frame token in
-  let kpair  = io_key tok1 in
-  let c      = fst kpair in
-  let tok2   = snd kpair in
-  let action = key_action c in
-  if action == 5 then
-    let minimap = build_minimap map w (get state 0) (get state 1) 0 in
-    [frame, doors, steps, minimap]
+-- ── @SECTION_MINIMAP [472-510] ────────────────────────────────────────────────
+-- Functions: enemy_cell, minimap_cell, minimap_row, build_minimap, init_enemies
+-- Purpose: 8x8 minimap generation; overlay player/enemies/walls
+-- Calls: enemy_x, enemy_y, enemy_alert, visible_enemies, floor, is_wall, get
+-- Called_by: build_minimap (recursive), render_packet, game_loop_rec
+-- Key_vars: [gx, gy, ec, cv, minimap_data, cell_type]
+-- Details:
+--   - enemy_cell: find enemy at grid cell (gx,gy); return cell code (0-4)
+--   - minimap_cell: single cell: 0=open, 1=wall, 2=player, 3=enemy-alert, 4=enemy-idle
+--   - minimap_row/build_minimap: recursive row-by-row assembly
+--   - init_enemies: default enemy spawn list
+-- Minimap cell encoding: 0=open, 1=wall, 2=player, 3=enemy-alert, 4=enemy-idle
+
+def enemy_cell enemies gx gy =
+  match enemies
+  | [] = 0
+  | e::t =
+    let ex = floor (enemy_x e) in
+    let ey = floor (enemy_y e) in
+    if ex == gx then
+      if ey == gy then if enemy_alert e == 1 then 3 else 4
+      else enemy_cell t gx gy
+    else enemy_cell t gx gy
+
+def minimap_cell map w px py enemies gx gy =
+  let pxf = floor px in
+  let pyf = floor py in
+  let ec  = enemy_cell enemies gx gy in
+  let cv  = get map (gx + gy * w) in
+  if pxf == gx then
+    if gy == pyf then 2
+    else if ec > 0 then ec
+    else if cv == 1 then 1
+    else 0
   else
-    let px_pos = get state 0 in
-    let py_pos = get state 1 in
-    let angle_pos = get state 2 in
-    let rad_angle = deg_to_rad angle_pos in
-    let door_x = floor (px_pos + sin rad_angle) in
-    let door_y = floor (py_pos + cos rad_angle) in
+    if ec > 0 then ec
+    else if cv == 1 then 1
+    else 0
+
+def minimap_row map w px py enemies gy gx =
+  if gx == w then []
+  else
+    minimap_cell map w px py enemies gx gy :: minimap_row map w px py enemies gy (gx + 1)
+
+def build_minimap map w px py enemies gy =
+  if gy == w then []
+  else minimap_row map w px py enemies gy 0 :: build_minimap map w px py enemies (gy + 1)
+
+def init_enemies =
+  [
+    [2.5, 2.5, 0],
+    [5.5, 3.5, 0],
+    [3.5, 5.5, 0]
+  ]
+
+-- ── @SECTION_MAIN [512-541] ───────────────────────────────────────────────────
+-- Functions: render_packet, game_loop_rec, game_loop
+-- Purpose: Render orchestration; main game loop; IOToken threading
+-- Calls: render_frame, build_minimap, visible_enemies, update_enemies, update, use_door, key_action, io_print, io_key
+-- Called_by: wolf_player.py (entry point)
+-- Key_vars: [packet, frame, minimap, state, map, enemies, doors, steps, tok, action]
+-- Details:
+--   - render_packet: assemble output packet [frame, minimap, visible_enemies, doors, steps, state]
+--   - game_loop_rec: tail-recursive main loop; reads input, updates world, renders
+--   - game_loop: entry point with initial enemies + stats setup
+--   - IO model: linear IOToken threading (io_print/io_key callbacks from Python)
+--   - termination: player presses 'q' key (action == 5)
+
+def render_packet frame minimap enemies doors steps state =
+  [frame, minimap, enemies, doors, steps, state]
+
+-- ── IOToken-based game loop with stats + enemies (v0.11) ───────────────────
+
+def game_loop_rec state map w enemies doors steps token =
+  let px = get state 0 in
+  let py = get state 1 in
+  let a  = get state 2 in
+  let frame   = render_frame map w enemies px py a 20 40 21 in
+  let minimap = build_minimap map w px py enemies 0 in
+  let visible = visible_enemies enemies map w px py in
+  let packet  = render_packet frame minimap visible doors steps state in
+  let tok1    = io_print packet token in
+  let kpair   = io_key tok1 in
+  let c       = fst kpair in
+  let tok2    = snd kpair in
+  let action  = key_action c in
+  if action == 5 then packet
+  else
+    let rad_angle = deg_to_rad a in
+    let door_x = floor (px + sin rad_angle) in
+    let door_y = floor (py + cos rad_angle) in
     let door_cell = is_wall map door_x door_y w in
     let map2 = if action == 4 then (if door_cell == 1 then use_door state map w else map) else map in
     let doors2 = if action == 4 then (if door_cell == 1 then doors + 1 else doors) else doors in
-    let state2 = if action <= 3 then update state action map w else state in
+    let state2 = if action <= 3 then update state action map2 w else state in
     let steps2 = if action <= 3 then steps + 1 else steps in
-    game_loop_rec state2 map2 w doors2 steps2 tok2
+    let enemies2 = update_enemies enemies (get state2 0) (get state2 1) map2 w in
+    game_loop_rec state2 map2 w enemies2 doors2 steps2 tok2
 
 def game_loop state map w token =
-  game_loop_rec state map w 0 0 token
+  game_loop_rec state map w [[2.5, 2.5, 0], [5.5, 3.5, 0], [3.5, 5.5, 0]] 0 0 token

@@ -1,18 +1,38 @@
--- NELA v0.5 — Wolfenstein grid engine (pure integer subset)
--- Source: github.com/maksimKorzh/wolfenstein-pygame (pure functions extracted)
+-- ============================================================================
+-- NELA v0.5 — Wolfenstein Grid Engine (Pure Integer Subset)
+-- LLM-OPTIMIZED MULTI-SECTION FILE
+-- ============================================================================
 --
--- Runs in v0.5:
---   map as flat integer list, O(1) lookup via built-in drop+head
---   discrete DDA wall detection (cardinal directions)
---   projected wall height (integer approximation)
---   4-direction scan returning list of distances
---   BFS reachability check
---   neg integer literals via (-1) paren syntax (unary minus)
+-- SECTION INDEX FOR LLM NAVIGATION (auto-maintained):
+--   SECTION_MAP_PRIM    [  24- 32]      map_get | is_wall
+--   SECTION_DDA         [  34- 52]      cast_ray | wall_height | scan_4
+--   SECTION_BFS         [  54-104]      mem | encode | expand | bfs | reachable
 --
--- Companion file wolf_game.nela adds angle-based raycasting with
--- precomputed trig tables supplied by the Python harness (wolf_player.py).
-
--- ── Map primitives ────────────────────────────────────────────────────────────
+-- ARCHITECTURE:
+--   Pure integer raycasting (no floating-point trig)
+--   Discrete DDA (Digital Differential Analyzer) wall detection
+--   BFS pathfinding for reachability queries
+--   Flat grid representation: map[x + y*w]
+--   Source: github.com/maksimKorzh/wolfenstein-pygame (extracted pure functions)
+--
+-- COMPANION:
+--   wolf_game.nela extends this with angle-based raycasting + trig tables
+--   (trig supplied by Python harness: wolf_player.py)
+--
+-- COORDINATES:
+--   Integers x, y for grid cells
+--   w = grid width; height = len(map) / w
+--
+-- ── @SECTION_MAP_PRIM [24-32] ────────────────────────────────────────────────
+-- Functions: map_get, is_wall
+-- Purpose: Grid cell access; wall collision queries
+-- Called_by: cast_ray, scan_4, expand, bfs
+-- Key_vars: [map, idx, x, y, w]
+-- Details:
+--   - map_get: O(1) access via built-in drop + head
+--   - is_wall: convert (x,y) coordinates to linear index, check cell value
+--   - Cell encoding: idx = x + y*w
+--   - Returns: 1 if wall, 0 if passable
 
 -- Access cell at linear index in flat grid list (O(1) via built-in drop)
 def map_get map idx = head (drop idx map)
@@ -21,10 +41,22 @@ def map_get map idx = head (drop idx map)
 -- w = grid width
 def is_wall map x y w = map_get map (x + y * w)
 
--- ── Discrete DDA raycaster ────────────────────────────────────────────────────
+-- ── @SECTION_DDA [34-52] ──────────────────────────────────────────────────────
+-- Functions: cast_ray, wall_height, scan_4
+-- Purpose: Discrete DDA raycasting; measure distances to walls
+-- Called_by: scan_4 (for ray casting), test suite
+-- Key_vars: [x, y, dx, dy, dist, height]
+-- Details:
+--   - cast_ray: step from (x,y) by (dx,dy) until wall hit
+--   - Returns: step count (integer distance)
+--   - wall_height: convert distance to projected pixel height
+--   - Integer formula: 19200 / dist (approximates perspective)
+--   - scan_4: cast rays in 4 cardinal directions (no diagonals)
+--   - Returns: list of 4 distances [right, down, left, up]
 
 -- Cast a ray from (x,y) stepping by (dx,dy) until hitting a wall.
 -- Returns distance in grid steps to first wall cell.
+-- v0.5: replace dx/dy integer steps with real angle + sin/cos offsets
 def cast_ray map x y dx dy w =
   if is_wall map x y w == 1
   then 0
@@ -32,6 +64,7 @@ def cast_ray map x y dx dy w =
 
 -- Projected wall height in pixels.
 -- Approximates: MAP_SCALE(64) * screen_dist(300) / depth = 19200 / dist
+-- v0.5: multiply by cos(player_angle - ray_angle) to fix fisheye distortion
 def wall_height dist =
   if dist == 0 then 19200
   else 19200 / dist
@@ -41,11 +74,21 @@ def wall_height dist =
 def scan_4 map px py w =
   cast_ray map px py 1 0 w ::
   cast_ray map px py 0 1 w ::
-  cast_ray map px py (-1) 0 w ::
-  cast_ray map px py 0 (-1) w ::
+  cast_ray map px py (0 - 1) 0 w ::
+  cast_ray map px py 0 (0 - 1) w ::
   []
 
--- ── BFS reachability ─────────────────────────────────────────────────────────
+-- ── @SECTION_BFS [54-104] ─────────────────────────────────────────────────────
+-- Functions: mem, encode, expand, bfs, reachable
+-- Purpose: BFS pathfinding; reachability queries
+-- Called_by: reachable (main entry point), test suite
+-- Key_vars: [queue, visited, goal, n, x, y, acc]
+-- Details:
+--   - mem: membership test; O(n) linear search
+--   - encode: bijection (x,y) ↔ integer via x + y*w
+--   - expand: find passable neighbors; filter visited
+--   - bfs: classic queue-based search; terminates on goal or empty queue
+--   - reachable: wrapper; queries if (gx,gy) reachable from (sx,sy)
 
 -- Check if integer n is in list
 def mem n lst =

@@ -1,4 +1,31 @@
-# Running Wolf Game — NELA-S v0.9
+# Running Wolf Game — NELA-S v0.11 (LLM-Optimized Single-File Architecture)
+
+## 🏗️ Architecture: LLM-Friendly Organization
+
+**wolf_game.nela** is structured as a single file with algorithmic organization for fast LLM navigation:
+
+```
+SECTION_TRIG        [51-65]      — Trigonometry & angle normalization
+SECTION_MAP         [67-80]      — Terrain queries
+SECTION_STATE       [82-90]      — Player state accessors
+SECTION_RAYCASTING  [92-165]     — Core 3D rendering engine
+SECTION_TEXTURES    [167-240]    — Texture assets & sampling
+SECTION_FRAME       [242-300]    — Frame buffer assembly
+SECTION_MOVEMENT    [302-355]    — Player movement & collision
+SECTION_GAME        [357-380]    — Input & action mapping
+SECTION_DOOR        [382-395]    — Door mechanics
+SECTION_ENEMIES     [397-470]    — Enemy AI, LOS, visibility
+SECTION_MINIMAP     [472-510]    — 8×8 minimap generation
+SECTION_MAIN        [512-541]    — Game loop & I/O threading
+```
+
+**Design Goals:**
+- Single file (no module imports) avoids NELA parser complications
+- Commented index header enables fast needle-in-haystack code retrieval
+- Marked sections auto-validate before each build (prevents header staleness)
+- All game logic in NELA-S; Python is framebuffer + input only
+
+---
 
 ## Quick Start (One Command)
 
@@ -8,7 +35,8 @@ cd /Users/heikowagner/llm_coder
 # 🎮 RECOMMENDED: Python runtime — fully interactive
 python3 src/wolf_player.py
 
-# C runtime — compiles NELA bytecode (non-interactive; for testing)
+# Verify LLM file structure is valid before playing:
+make check-header
 make
 python3 << 'COMPILE'
 import sys; sys.path.insert(0, 'src')
@@ -20,6 +48,42 @@ open('wolf_game.nelac', 'wb').write(bytecode)
 COMPILE
 echo 'q' | ./nelac wolf_game.nelac --game  # Test-only; press 'q' to quit
 ```
+
+## 🧪 LLM Header Validation (ENFORCED for Code Quality)
+
+The file header must always stay synchronized with actual code sections.
+
+**Check header validity:**
+```bash
+make check-header
+```
+
+**Auto-sync if out of date:**
+```bash
+make fix-header    # Regenerates header from actual code
+```
+
+**When to validate:**
+- Before any git commit (run `make check-header`)
+- After major refactors (use `make fix-header`)
+- After LLM-assisted code generation (auto-check before merge)
+
+**What the validator does:**
+- Scans for `@SECTION_*` markers in wolf_game.nela
+- Extracts all function names and their line ranges
+- Cross-checks against header index (first 50 lines)
+- Reports any line number mismatches or missing sections
+- Re-generates header if `--regenerate` flag is set
+
+**Enforced Invariants** (LLM code must follow these):
+- Functions declared before use (no forward references)
+- All game logic in NELA-S (no Python sprite rendering)
+- Texture sampling contained in `frame_cell` function
+- Enemy LOS uses `is_wall_fat` (5-point conservative checks)
+- Player state is always `[px, py, angle]` (2 floats, 1 int)
+- Map is flat 1D list indexed as `x + y*w`
+
+---
 
 ## ✅ Python Runtime (RECOMMENDED - Fully Interactive)
 
@@ -34,6 +98,25 @@ python3 src/wolf_player.py
 - No compilation needed; plays immediately
 
 **Controls**: **W/A/S/D** = move/turn, **E** = door, **Q** = quit
+
+---
+
+## 🖼️ Optional: Build PNG Textures (Internet → NELA-S)
+
+This downloads CC0 texture packs from ambientCG, converts them to compact PNG previews,
+and generates NELA-S texture tables.
+
+```bash
+/Users/heikowagner/llm_coder/.venv/bin/python tools/build_wolf_textures.py
+```
+
+Generated assets:
+- `assets/textures/*.png` (16x16 previews)
+- `examples/wolf_textures_generated.nela` (generated texture constants)
+
+Important architecture note:
+- Texture sampling and enemy-in-render logic run in **NELA-S** (`examples/wolf_game.nela`)
+- Python (`src/wolf_player.py`) only performs framebuffer display + input
 
 ---
 
