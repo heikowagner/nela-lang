@@ -603,13 +603,18 @@ def init_enemies =
 --   - game_loop_rec: tail-recursive main loop; reads input, updates world, renders
 --   - game_loop: entry point with initial enemies + stats setup
 --   - IO model: linear IOToken threading (io_print/io_key callbacks from Python)
+--   - Sound model: NELA-defined payload [freq_hz, dur_ms, volume] via io_sound
 --   - termination: player presses 'q' key (action == 5)
 
 def render_packet frame minimap enemies doors steps state =
   [frame, minimap, enemies, doors, steps, state]
 
-def emit_sound sid token =
-  io_sound sid token
+def sfx_step _ = [150.0, 35, 0.20]
+def sfx_door _ = [520.0, 95, 0.28]
+def sfx_enemy _ = [240.0, 75, 0.24]
+
+def emit_sound sound token =
+  io_sound sound token
 
 -- ── IOToken-based game loop with stats + enemies (v0.11) ───────────────────
 
@@ -637,11 +642,11 @@ def game_loop_rec state map w enemies doors steps token =
     let state2 = if action <= 3 then update state action map2 w else state in
     let steps2 = if action <= 3 then steps + 1 else steps in
     let enemies2 = update_enemies enemies (get state2 0) (get state2 1) map2 w in
-    let tok3 = if action <= 3 then emit_sound 0 tok2 else tok2 in
-    let tok4 = if action == 4 then (if door_cell == 1 then emit_sound 1 tok3 else tok3) else tok3 in
+    let tok3 = if action <= 3 then emit_sound (sfx_step 0) tok2 else tok2 in
+    let tok4 = if action == 4 then (if door_cell == 1 then emit_sound (sfx_door 0) tok3 else tok3) else tok3 in
     let vis0 = len visible in
     let vis1 = len (visible_enemies enemies2 map2 w (get state2 0) (get state2 1)) in
-    let tok5 = if vis1 > vis0 then emit_sound 2 tok4 else tok4 in
+    let tok5 = if vis1 > vis0 then emit_sound (sfx_enemy 0) tok4 else tok4 in
     game_loop_rec state2 map2 w enemies2 doors2 steps2 tok5
 
 def game_loop state map w token =

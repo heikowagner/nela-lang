@@ -219,13 +219,14 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
         token.print_frame(frame)
         return token._fresh()
 
-    # io_sound sid token  →  token'   — linear: consumes token
+    # io_sound sound token  →  token'   — linear: consumes token
+    # sound is runtime payload defined by NELA-S (e.g. [freq_hz, dur_ms, volume])
     if op == "io_sound":
-        sid = int(eval_expr(expr["l"], env, defs))
+        sound = eval_expr(expr["l"], env, defs)
         token = eval_expr(expr["r"], env, defs)
         play_sound = getattr(token, "play_sound", None)
         if play_sound is not None:
-            play_sound(sid)
+            play_sound(sound)
         return token._fresh()
 
     if op == "and":

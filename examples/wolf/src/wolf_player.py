@@ -144,13 +144,30 @@ def _play_sfx(name: str) -> None:
         pass
 
 
-def _sound_event(sound_id: int) -> None:
-    if sound_id == 0:
-        _play_sfx("step")
-    elif sound_id == 1:
-        _play_sfx("door")
-    elif sound_id == 2:
-        _play_sfx("enemy")
+def _play_tone(freq_hz: float, duration_ms: int, volume: float) -> None:
+    key = (round(freq_hz, 2), int(duration_ms), round(volume, 3))
+    snd = _sfx.get(key)
+    if snd is None:
+        snd = _make_tone(freq_hz, duration_ms, volume)
+        _sfx[key] = snd
+    try:
+        snd.play()
+    except Exception:
+        pass
+
+
+def _sound_event(sound: object) -> None:
+    # NELA-S provides [freq_hz, dur_ms, volume]; host only executes it.
+    if not _audio_ready:
+        return
+    if isinstance(sound, (list, tuple)) and len(sound) >= 3:
+        try:
+            freq_hz = float(sound[0])
+            duration_ms = int(sound[1])
+            volume = float(sound[2])
+            _play_tone(freq_hz, duration_ms, volume)
+        except (TypeError, ValueError):
+            pass
 
 
 def _init_gpu_framebuffer() -> bool:
