@@ -125,7 +125,7 @@ See **Worked Examples** below for complete programs. For the full grammar, see t
 | `examples/wolf_grid.nela` | Discrete DDA grid engine; BFS reachability; `div`/`mod`; `(-1)` neg args |
 | `examples/wolf_game.nela` | Playable Wolfenstein raycaster. **All logic in NELA-S.** Float positions, direct `sin`/`cos`, O(1) `get` map lookup. Python: keyboard + print only. |
 
-Run all tests: `python3 src/nela_runtime.py`
+Run all tests: `python3 src/runtime.py`
 
 **Mission invariant:** When using NELA-S for applications (games, VMs, etc.), the Python harness
 must be strictly I/O-only. Logic that escapes to Python is a mission violation — it belongs in
@@ -191,7 +191,7 @@ Computed cleanly in NELA-S using functional map update with pattern matching. �
 10. Check that names bound in `let`/`match` patterns are used exactly once in the body (linearity).
 
 ### Phase 4 — Execution / Bridge
-11. Run `python3 src/nela_runtime.py` to verify output matches Python reference.
+11. Run `python3 src/runtime.py` to verify output matches Python reference.
 12. (Optional / future) The compiler lowers NELA-S → NELA-C for formal verification and optimal parallel execution.
 
 ---

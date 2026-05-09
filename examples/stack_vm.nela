@@ -69,7 +69,7 @@ def vm_run program stack =
 -- ── @SECTION_EVAL [66-75] ─────────────────────────────────────────────────────
 -- Functions: vm_eval
 -- Purpose: Execute bytecode program starting with empty stack; return result
--- Called_by: test suite (nela_runtime.py)
+-- Called_by: test suite (runtime.py)
 -- Key_vars: [program]
 -- Details:
 --   - Convenience wrapper around vm_run

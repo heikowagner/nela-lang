@@ -57,7 +57,7 @@ def merge a b =
 -- ── @SECTION_MERGESORT [38-44] ────────────────────────────────────────────────
 -- Functions: mergesort
 -- Purpose: Sort integer list using mergesort algorithm
--- Called_by: test suite (nela_runtime.py)
+-- Called_by: test suite (runtime.py)
 -- Key_vars: [lst, l, r]
 -- Details:
 --   - Base cases: empty [] and singleton [h] already sorted

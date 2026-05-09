@@ -38,7 +38,7 @@ You describe intent in English
            ▼
   ┌──────────────────────────┐
   │  NELA Runtime            │  Tree-walking interpreter (current)
-  │  src/nela_runtime.py     │  or interaction net reducer (compiled path)
+  │  src/runtime.py          │  or interaction net reducer (compiled path)
   └──────────────────────────┘
 ```
 
@@ -57,7 +57,7 @@ compiler backend — the formal semantic foundation, never hand-authored.
 | 4 | **Dependent Type Theory** (Martin-Löf, 1984) | Programs = proofs; ill-typed nets are unrepresentable |
 | 5 | **Von Neumann CA** | Locality metaphor; conceptual ancestor |
 
-See [.github/skills/nela-foundations/SKILL.md](.github/skills/nela-foundations/SKILL.md) for full
+See [.gh/skills/nela-foundations/SKILL.md](.gh/skills/nela-foundations/SKILL.md) for full
 mathematical derivations.
 
 ---
@@ -194,7 +194,7 @@ What makes this non-trivial in NELA-S:
 ## NELA-S Syntax (Quick Reference)
 
 NELA-S programs are written in ML/Haskell-like syntax and saved as `.nela` files.
-`src/nela_parser.py` parses `.nela` source into the dict AST evaluated by the runtime.
+`src/parser.py` parses `.nela` source into the dict AST evaluated by the runtime.
 
 ```haskell
 -- Program = one or more def forms
@@ -239,7 +239,7 @@ name           -- catch-all variable
 ## Running the Tests
 
 ```bash
-python3 src/nela_runtime.py
+python3 src/runtime.py
 ```
 
 Expected output:
@@ -273,11 +273,11 @@ llm_coder/
 │   ├── wolf_game.nela           NELA-S: angle raycaster, frame assembly, game update
 │   └── *.nela.json              Legacy IR (JSON AST — still loadable)
 ├── src/
-│   ├── nela_parser.py           ML/Haskell-like syntax parser (.nela → dict AST)
-│   ├── nela_runtime.py          Surface language interpreter + test harness (92 tests)
-│   ├── nela_compiler.py         NELA-C compiler: AST → interaction net → .nelac bytecode
+│   ├── parser.py                ML/Haskell-like syntax parser (.nela → dict AST)
+│   ├── runtime.py               Surface language interpreter + test harness (92 tests)
+│   ├── compiler.py              NELA-C compiler: AST → interaction net → .nelac bytecode
 │   └── wolf_player.py           I/O-only harness: keyboard input and terminal output only
-└── .github/
+└── .gh/
     ├── agents/
     │   └── llm-lang.agent.md    VS Code agent: LLM Language Architect
     └── skills/
@@ -297,23 +297,27 @@ Use the **starter pack template** in `starter_pack_nela_s/` to bootstrap new NEL
 The starter pack is a copy-ready structure with all necessary agent/skills and a frozen
 Python runtime—no modification to runtime files is permitted.
 
+⚠️ **Temporary limitation:** The starter pack currently embeds the Python toolchain in the project.
+The final solution will strip out embedded tools and fetch the compiler pipeline from an external package/service.
+This bootstrap approach is for now only.
+
 ### 1) Copy the Starter Pack
 
 ```bash
-cp -r starter_pack_nela_s/ my-new-nela-project
-cd my-new-nela-project
+cp -r starter_pack_nela_s/ my-nela-project
+cd my-nela-project
 ```
 
 The starter pack includes:
 
-- `.github/agents/nela-s-authoring.agent.md` — NELA-S authoring agent (LLM-focused)
-- `.github/skills/nela-s-writing/SKILL.md` — Complete NELA-S syntax and operator reference
-- `.github/skills/nela-runtime-immutable/SKILL.md` — Immutability policy for copied runtime
-- `src/nela_parser.py`, `src/nela_runtime.py`, `src/nela_compiler.py` — Frozen Python toolchain
+- `.gh/agents/nela-s-authoring.agent.md` — NELA-S authoring agent (LLM-focused)
+- `.gh/skills/nela-s-writing/SKILL.md` — Complete NELA-S syntax and operator reference
+- `.gh/skills/nela-runtime-immutable/SKILL.md` — Immutability policy for embedded toolchain (temporary)
+- `_t/` — Embedded compiler, parser, runtime (frozen, immutable; to be removed in final solution)
 - `tools/validate_nela_header.py`, `Makefile` — Build and validation scripts
 
-**Critical:** The Python files (`src/*.py`, `tools/*.py`) are immutable copies. Do not modify them.
-If you need toolchain changes, make them in the parent repo and re-copy.
+**Critical:** All files in `_t/` are frozen copies. Do not modify them.
+When the final dependency system is ready, this folder will be removed.
 
 ### 2) Create Project-Specific Files Fresh
 
@@ -321,14 +325,99 @@ In your new repo, create:
 
 - `.instructions.md` (project workflow and constraints)
 - `README.md` (project mission and architecture)
-- `examples/*.nela` (new source programs)
-- Optional host harness under `src/` (for example, a game or CLI bridge)
+- `src/*.nela` (new NELA-S source programs — **all project source here**)
 - `.copilot-instructions.md` (optional: agent customization)
+- Optional host harness files (standalone Python/other scripts, if needed for I/O or external integration)
+
+**Directory layout (current bootstrap structure):**
+
+```
+my-nela-project/
+├── .gh/
+│   ├── agents/
+│   │   └── nela-s-authoring.agent.md      (from starter pack)
+│   └── skills/
+│       ├── nela-s-writing/
+│       ├── nela-runtime-immutable/
+│       └── ...
+├── src/
+│   ├── module_a.nela                      (new NELA-S source)
+│   ├── module_b.nela
+│   └── ...
+├── _t/                                    (embedded toolchain; temporary)
+│   ├── parser.py
+│   ├── runtime.py
+│   ├── compiler.py
+│   └── ...
+├── .instructions.md                       (new: project policy)
+├── README.md                              (new: project overview)
+├── Makefile                               (frozen from starter pack)
+└── my_host.py                             (optional: custom I/O harness)
+```
+
+**Future structure (when toolchain becomes a managed dependency):**
+
+```
+my-nela-project/
+├── .gh/
+│   └── ...
+├── src/
+│   └── *.nela                             (all NELA-S source)
+├── .nela.toml or pyproject.toml           (reference external toolchain version)
+├── .instructions.md
+├── README.md
+└── ...
+```
+
+**LLM-optimized naming and structure:**
+
+Path references directly impact token consumption. Consider these abbreviations:
+
+| Full name | Abbrev | Savings per ref | Rationale |
+|---|---|---|---|
+| `_nela_tools/` | `_t/` | 10 chars | Immutable toolchain is unambiguous in context |
+| `.github/` | `.gh/` | 5 chars | Standard abbreviation (GitHub → gh) |
+| `nela_parser.py` | `parser.py` | 5 chars | Module name is redundant in context |
+| `nela_runtime.py` | `runtime.py` | 6 chars | Module name is redundant in context |
+| `nela_compiler.py` | `compiler.py` | 7 chars | Module name is redundant in context |
+
+Example: a project with 50 path references per LLM context window saves 500–1500 tokens by abbreviating aggressively.
+
+**Structure principles for LLM efficiency:**
+
+- Flatten directory trees; avoid `_tools/subdir/subdir/file.py` — use `_t/file.py` instead
+- Group by semantic function (source, tools, metadata) rather than by file type
+- Single source directory (`src/`) with all `.nela` files minimizes context bloat
+- Separate immutable tools (`_t/`) from mutable source (`src/`) — allows LLM to skip reasoning about frozen code
+- Use hyphens in paths (`_src-nela`, `_t-validate`) if disambiguation needed; avoid double underscores
+
+**Recommended abbreviated structure:**
+
+```
+my-nela-project/
+├── .gh/agents/
+│   └── nela-s-authoring.agent.md
+├── .gh/skills/
+│   ├── nela-s-writing/
+│   └── nela-runtime-immutable/
+├── src/
+│   ├── module_a.nela
+│   └── module_b.nela
+├── _t/                         (immutable toolchain; _t = _tools abbreviation)
+│   ├── parser.py
+│   ├── runtime.py
+│   ├── compiler.py
+│   └── disasm.py
+├── .instructions.md
+├── README.md
+├── Makefile
+└── my_host.py
+```
 
 ### 3) Add Your First NELA Module
 
-Create a new file in `examples/` and follow the header standard from
-`.github/skills/nela-s-writing/SKILL.md`.
+Create a new file in `src/` and follow the header standard from
+`.gh/skills/nela-s-writing/SKILL.md`.
 
 Minimum workflow:
 
@@ -343,8 +432,8 @@ make test
 Use the `nela-s-authoring.agent.md` (invoked via VS Code Chat) to write NELA-S programs.
 The agent has access to:
 
-- `nela-s-writing/SKILL.md` — Complete syntax, operators, and builtins
-- `nela-runtime-immutable/SKILL.md` — Enforcement rules for immutable runtime
+- `.gh/skills/nela-s-writing/SKILL.md` — Complete syntax, operators, and builtins
+- `.gh/skills/nela-runtime-immutable/SKILL.md` — Enforcement rules for immutable runtime
 - Your `.instructions.md` — Project-specific constraints
 
 The agent will **not permit** modifications to frozen runtime files.
@@ -470,7 +559,7 @@ NELA-C compiler: NELA-S → interaction net bytecode (`.nelac`).
 
 | Feature | Status | Notes |
 |---|---|---|
-| `nela_compiler.py` | ✅ done | NELA-S AST → interaction net graph → `.nelac` binary |
+| `compiler.py` | ✅ done | NELA-S AST → interaction net graph → `.nelac` binary |
 | Agent vocabulary | ✅ done | 25 agents: CON/DUP/ERA/PAR/INT/FLT/STR/BOO/APP/LAM + arithmetic + list ops |
 | Bytecode format | ✅ done | `NELAC` magic + version(u8) + node_count(u32) + node table + root(u32); stable v3/v4 include explicit node IDs so decode is record-order independent |
 | Serialise / deserialise | ✅ done | `net_to_bytes` / `bytes_to_net` / `bytes_to_py` roundtrip |
@@ -483,7 +572,7 @@ Compatibility note:
 - Legacy v1/v2 `.nelac` files are still supported.
 - Stable v3/v4 format removes node record order dependency by storing explicit node IDs.
 
-Run compiler: `python3 src/nela_compiler.py`
+Run compiler: `python3 src/compiler.py`
 
 ## v0.11 Roadmap
 
