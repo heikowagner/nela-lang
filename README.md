@@ -269,12 +269,6 @@ llm_coder/
 │   ├── quicksort.nela           NELA-S: recursive quicksort
 │   ├── mergesort.nela           NELA-S: three-function mergesort with Pair ADT
 │   ├── stack_vm.nela            NELA-S: complete stack-based virtual machine
-│   └── *.nela.json              Legacy IR (JSON AST — still loadable)
-├── src/
-│   ├── nela_parser.py           ML/Haskell-like syntax parser (.nela → dict AST)
-│   ├── nela_runtime.py          Surface language interpreter + test harness (92 tests)
-│   ├── nela_compiler.py         NELA-C compiler: AST → interaction net → .nelac bytecode
-│   └── nelac_runtime.c          C runtime for .nelac bytecode
 │   ├── wolf/
 │   │   ├── wolf_grid.nela       NELA-S: discrete DDA grid engine + BFS reachability
 │   │   ├── wolf_game.nela       NELA-S: angle raycaster, frame assembly, game update
@@ -287,6 +281,12 @@ llm_coder/
 │   │   │   └── textures/        16x16 preview textures
 │   │   ├── RUN_WOLF.md          Wolf-specific run and build notes
 │   │   └── LLM_CODE_STRUCTURE.md  Wolf-specific LLM structure notes
+│   └── *.nela.json              Legacy IR (JSON AST — still loadable)
+├── src/
+│   ├── nela_parser.py           ML/Haskell-like syntax parser (.nela → dict AST)
+│   ├── nela_runtime.py          Surface language interpreter + test harness (92 tests)
+│   ├── nela_compiler.py         NELA-C compiler: AST → interaction net → .nelac bytecode
+│   └── nelac_runtime.c          C runtime for .nelac bytecode
 └── .github/
     ├── agents/
     │   └── llm-lang.agent.md    VS Code agent: LLM Language Architect
