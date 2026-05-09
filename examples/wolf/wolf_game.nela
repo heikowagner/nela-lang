@@ -135,7 +135,7 @@ def ray_march_kind map w enemies rx ry dx dy limit =
         let d = head (tail r) in
         k :: (d + 1) :: []
 
--- Returns [kind, height]
+-- Returns [kind, height, tex_id, u]
 def render_col_data map w enemies px py ray_angle =
   let a    = norm_angle ray_angle in
   let rad  = deg_to_rad a in
@@ -144,8 +144,12 @@ def render_col_data map w enemies px py ray_angle =
   let hit  = ray_march_kind map w enemies px py dx dy 400 in
   let kind = head hit in
   let dist = head (tail hit) in
+  let hx   = px + dx * dist in
+  let hy   = py + dy * dist in
+  let tx   = wall_tex_id hx hy in
+  let hu   = wall_u hx hy dx dy in
   let h    = floor (21.0 / ((dist + 1) * 0.05)) in
-  kind :: h :: []
+  kind :: h :: tx :: hu :: []
 
 -- ── All columns (col_idx starts at 0) ────────────────────────────────────────
 
@@ -157,18 +161,22 @@ def render_cols_data map w enemies px py angle half_fov ncols col_idx =
     c :: render_cols_data map w enemies px py angle half_fov ncols (col_idx + 1)
 
 -- ── @SECTION_TEXTURES [167-240] ──────────────────────────────────────────────
--- Functions: shade_of, tex_brick, tex_planks, tex_metal, wall_tex_id, wrap16, tex_pick, tex_sample
+-- Functions: shade_of, tex_brick, tex_planks, tex_metal, enemy_sprite, wall_tex_id, wrap16, frac16, wall_u, tex_pick, tex_sample, enemy_tex_sample
 -- Purpose: Texture data (16x16 quantized tables); texture sampling on walls
 -- Calls: wrap16, tex_pick, get (builtin)
 -- Called_by: frame_cell, tex_sample
--- Key_vars: [tex_id, u, v, shade, col_idx]
+-- Key_vars: [tex_id, u, v, shade, hit_x, hit_y]
 -- Details:
 --   - shade_of: wall height to shade ID mapping (2-4 based on screen height)
 --   - tex_brick/planks/metal: 16x16 arrays; each cell is shade ID 6-13
---   - wall_tex_id: map column index to texture ID (deterministic)
+--   - wall_tex_id: map wall tile coordinate to texture ID
 --   - wrap16: recursive modulo for safe negative/overflow handling
+--   - frac16: convert fractional part of coordinate to [0,15] texture index
+--   - wall_u: choose horizontal texture coordinate from wall hit-point + ray direction
 --   - tex_pick: select texture function by ID
 --   - tex_sample: lookup shade from texture at (u,v) coordinates
+--   - enemy_sprite: 16x16 billboard sprite with transparency (-1)
+--   - enemy_tex_sample: sample enemy sprite; returns -1 for transparent pixel
 
 -- Frame assembly: shade_of maps wall height to brightness levels
 def shade_of h screen_h =
@@ -242,15 +250,40 @@ def tex_metal _ =
   [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 ]
 
-def wall_tex_id col =
-  if col < 13 then 0
-  else if col < 26 then 1
-  else 2
+def enemy_sprite _ =
+[
+  [-1, -1, -1, -1, -1, -1,  5,  5,  5,  5, -1, -1, -1, -1, -1, -1],
+  [-1, -1, -1, -1, -1,  5, 12, 12, 12, 12,  5, -1, -1, -1, -1, -1],
+  [-1, -1, -1, -1,  5, 12, 11, 11, 11, 11, 12,  5, -1, -1, -1, -1],
+  [-1, -1, -1,  5, 12, 11, 11, 11, 11, 11, 11, 12,  5, -1, -1, -1],
+  [-1, -1,  5, 12, 11, 13, 13, 11, 11, 13, 13, 11, 12,  5, -1, -1],
+  [-1, -1,  5, 12, 11, 13, 13, 11, 11, 13, 13, 11, 12,  5, -1, -1],
+  [-1, -1,  5, 12, 11, 11, 11, 11, 11, 11, 11, 11, 12,  5, -1, -1],
+  [-1, -1,  5, 12, 11,  6, 11, 11, 11, 11,  6, 11, 12,  5, -1, -1],
+  [-1, -1,  5, 12, 11, 11, 11, 11, 11, 11, 11, 11, 12,  5, -1, -1],
+  [-1, -1,  5, 12, 11, 10, 10, 10, 10, 10, 10, 11, 12,  5, -1, -1],
+  [-1, -1,  5, 12, 11, 11, 10, 10, 10, 10, 11, 11, 12,  5, -1, -1],
+  [-1, -1, -1,  5, 12, 11, 11, 10, 10, 11, 11, 12,  5, -1, -1, -1],
+  [-1, -1, -1, -1,  5, 12, 11, 11, 11, 11, 12,  5, -1, -1, -1, -1],
+  [-1, -1, -1, -1, -1,  5, 12, 11, 11, 12,  5, -1, -1, -1, -1, -1],
+  [-1, -1, -1, -1, -1, -1,  5, 12, 12,  5, -1, -1, -1, -1, -1, -1],
+  [-1, -1, -1, -1, -1, -1, -1,  5,  5, -1, -1, -1, -1, -1, -1, -1]
+]
+
+def wall_tex_id hit_x hit_y =
+  (floor hit_x + floor hit_y) % 3
 
 def wrap16 n =
   if n >= 16 then wrap16 (n - 16)
   else if n < 0 then wrap16 (n + 16)
   else n
+
+def frac16 x =
+  floor ((x - floor x) * 16.0)
+
+def wall_u hit_x hit_y dx dy =
+  if abs dx > abs dy then wrap16 (frac16 hit_y)
+  else wrap16 (frac16 hit_x)
 
 def tex_pick tex_id =
   if tex_id == 0 then tex_brick 0
@@ -260,6 +293,11 @@ def tex_pick tex_id =
 def tex_sample tex_id u v =
   let tex = tex_pick tex_id in
   let row = get tex (wrap16 v) in
+  get row (wrap16 u)
+
+def enemy_tex_sample u v =
+  let spr = enemy_sprite 0 in
+  let row = get spr (wrap16 v) in
   get row (wrap16 u)
 
 -- ── @SECTION_FRAME [242-300] ─────────────────────────────────────────────────
@@ -278,12 +316,17 @@ def tex_sample tex_id u v =
 def cap h limit =
   if h > limit then limit else h
 
-def frame_cell row col_h col_kind mid screen_h col_idx =
+def frame_cell row col_h col_kind mid screen_h tex_id hit_u =
   let half = col_h / 2 in
   let dist = if row >= mid then row - mid else mid - row in
+  let top  = mid - half in
+  let v    = ((row - top) * 16) / (col_h + 1) in
   if dist <= half then
-    if col_kind == 1 then 5
-    else tex_sample (wall_tex_id col_idx) col_idx row
+    if col_kind == 1 then
+      let ep = enemy_tex_sample hit_u v in
+      if ep < 0 then (if row < mid then 0 else 1)
+      else ep
+    else tex_sample tex_id hit_u v
   else if row < mid then 0
   else 1
 
@@ -293,8 +336,10 @@ def frame_row cols row mid screen_h col_idx =
   | c::t =
     let k = head c in
     let h = head (tail c) in
+    let tx = get c 2 in
+    let hu = get c 3 in
     let ch = cap h screen_h in
-    frame_cell row ch k mid screen_h col_idx :: frame_row t row mid screen_h (col_idx + 1)
+    frame_cell row ch k mid screen_h tx hu :: frame_row t row mid screen_h (col_idx + 1)
 
 def make_frame cols screen_h row =
   if row == screen_h then []
