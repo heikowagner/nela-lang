@@ -138,35 +138,56 @@ State: `[px, py, angle]` where `px`, `py` are floats.
 
 ---
 
-
+### Stack Machine — `examples/stack_vm.nela`
 
 A complete stack-based virtual machine — the same execution model as CPython, the JVM, and
-WebAssembly. Two functions: `vm_run` (recursive execution loop) and `vm_eval` (entry point).
+WebAssembly. Two functions: `vm_eval` (entry point) and `vm_run` (recursive execution loop).
 
-**Instruction set:**
+Instruction set encoding:
 
 | Encoding | Instruction | Semantics |
 |----------|-------------|-----------|
-| `[0, n]` | PUSH n | push n |
-| `[1]` | ADD | pop a, b → push a+b |
+| `[0, n]` | PUSH n | push n onto stack |
+| `[1]` | ADD | pop a, b → push b+a |
 | `[2]` | SUB | pop a (top), b → push b−a |
 | `[3]` | MUL | pop a, b → push a×b |
-| `[4]` | NEG | pop a → push 0−a |
-| `[5]` | DUP | push copy of top |
-| `[6]` | SWAP | swap top two |
+| `[4]` | NEG | pop a → push −a |
+| `[5]` | DUP | duplicate top of stack |
+| `[6]` | SWAP | exchange top two stack elements |
 
-**Sample programs:**
+| Function | Logic |
+|---|---|
+| `vm_eval program` | Entry point: start with empty stack, dispatch to `vm_run program [] 0` |
+| `vm_run program stack pc` | Recursive interpreter: fetch opcode at program counter `pc`, execute, advance |
+| Opcode dispatch | All 7 ops via chained `if`/`eq`; handle each case with stack manipulation |
+| Stack manipulation | Use `let` bindings to name popped values; use `::` cons to construct new stack |
+| Program termination | When `pc >= len(program)`, return top of stack (or 0 if stack empty) |
+
+Sample programs:
 
 ```python
-[[0,3], [0,4], [1]]              # 3 + 4 = 7
-[[0,4], [5], [3]]                # 4² = 16  (DUP then MUL)
-[[0,3],[0,4],[1],[0,5],[0,2],[2],[3]]  # (3+4)*(5-2) = 21
+[[0,3], [0,4], [1]]                         # 3 + 4 = 7
+[[0,4], [5], [3]]                           # 4 × 4 = 16  (DUP then MUL)
+[[0,3],[0,4],[1],[0,5],[0,2],[2],[3]]       # (3+4)×(5-2) = 21
+[[0,10],[0,5],[2],[0,2],[3]]                # (10−5)×2 = 10
+```
+
+Example execution: `[[0,3], [0,4], [1]]` (compute 3+4)
+
+```
+pc=0: PUSH 3   →  stack = [3]
+pc=1: PUSH 4   →  stack = [4, 3]
+pc=2: ADD      →  pop 4, pop 3 → push 7  →  stack = [7]
+pc=3: end      →  return 7
 ```
 
 What makes this non-trivial in NELA-S:
-- Two runtime types in play simultaneously (program list + integer stack)
-- 7 opcodes dispatched at runtime via chained `if`/`eq`
-- SWAP/DUP require nested `let`-bindings to name intermediate stack values
+- Two runtime types in play simultaneously (program list of instructions + integer stack)
+- Fetch-decode-execute loop with 7-way opcode dispatch via chained `if`/`eq` conditionals
+- Stack operations require careful `let`-binding for popped values and `::` reconstruction
+- Test matrix: arithmetic, DUP/SWAP interaction, nested operations, stack underflow edge cases
+
+---
 
 ---
 
@@ -272,36 +293,42 @@ llm_coder/
 
 ## Start a New NELA Project
 
-Use this repository as a template for new NELA projects by splitting assets into reusable
-infrastructure and project-specific files.
+Use the **starter pack template** in `starter_pack_nela_s/` to bootstrap new NELA projects.
+The starter pack is a copy-ready structure with all necessary agent/skills and a frozen
+Python runtime—no modification to runtime files is permitted.
 
-### 1) Copy Reusable Infrastructure
+### 1) Copy the Starter Pack
 
-Copy these directories/files into the new repo:
+```bash
+cp -r starter_pack_nela_s/ my-new-nela-project
+cd my-new-nela-project
+```
 
-- `.github/agents/llm-lang.agent.md`
-- `.github/skills/nela-foundations/SKILL.md`
-- `.github/skills/nela-tools/SKILL.md`
-- `.github/skills/nela-headers/SKILL.md`
-- `src/nela_parser.py`
-- `src/nela_runtime.py`
-- `src/nela_compiler.py`
-- `tools/validate_nela_header.py`
-- `Makefile`
+The starter pack includes:
+
+- `.github/agents/nela-s-authoring.agent.md` — NELA-S authoring agent (LLM-focused)
+- `.github/skills/nela-s-writing/SKILL.md` — Complete NELA-S syntax and operator reference
+- `.github/skills/nela-runtime-immutable/SKILL.md` — Immutability policy for copied runtime
+- `src/nela_parser.py`, `src/nela_runtime.py`, `src/nela_compiler.py` — Frozen Python toolchain
+- `tools/validate_nela_header.py`, `Makefile` — Build and validation scripts
+
+**Critical:** The Python files (`src/*.py`, `tools/*.py`) are immutable copies. Do not modify them.
+If you need toolchain changes, make them in the parent repo and re-copy.
 
 ### 2) Create Project-Specific Files Fresh
 
-Create these for the new domain instead of copying Wolf-specific content verbatim:
+In your new repo, create:
 
 - `.instructions.md` (project workflow and constraints)
 - `README.md` (project mission and architecture)
 - `examples/*.nela` (new source programs)
 - Optional host harness under `src/` (for example, a game or CLI bridge)
+- `.copilot-instructions.md` (optional: agent customization)
 
 ### 3) Add Your First NELA Module
 
 Create a new file in `examples/` and follow the header standard from
-`.github/skills/nela-headers/SKILL.md`.
+`.github/skills/nela-s-writing/SKILL.md`.
 
 Minimum workflow:
 
@@ -311,11 +338,16 @@ make fix-header
 make test
 ```
 
-### 4) Keep Responsibilities Clean
+### 4) Authoring with the Starter Pack Agent
 
-- `.github/skills/*`: reusable standards and domain/toolchain knowledge.
-- `.github/agents/*`: reusable agent behavior/persona.
-- `.instructions.md`: project-specific editing and review policy.
+Use the `nela-s-authoring.agent.md` (invoked via VS Code Chat) to write NELA-S programs.
+The agent has access to:
+
+- `nela-s-writing/SKILL.md` — Complete syntax, operators, and builtins
+- `nela-runtime-immutable/SKILL.md` — Enforcement rules for immutable runtime
+- Your `.instructions.md` — Project-specific constraints
+
+The agent will **not permit** modifications to frozen runtime files.
 
 ---
 
