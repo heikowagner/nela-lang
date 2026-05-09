@@ -17,7 +17,7 @@
 -- ── @SECTION_QUICKSORT [17-24] ────────────────────────────────────────────────
 -- Functions: qs
 -- Purpose: Sort integer list using quicksort algorithm
--- Called_by: test suite (runtime.py)
+-- Called_by: test suite (nela_runtime.py)
 -- Key_vars: [lst, h, t]
 -- Details:
 --   - Partition: h (pivot) vs. elements <= h (left), > h (right)

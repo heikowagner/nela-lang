@@ -8,6 +8,8 @@ applyTo: "src/*.py,tools/*.py,Makefile"
 # Immutable Runtime Policy (Starter-Pack Projects)
 
 This skill is repository-template specific.
+The starter pack itself contains only authoring assets under `.github/`.
+Apply this policy only after runtime/tool files are copied into the target project.
 
 ## Rule
 

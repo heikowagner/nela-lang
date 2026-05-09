@@ -3,7 +3,8 @@ name: NELA-S Authoring Agent
 description: >
   Agent for writing and refactoring NELA-S source files only.
   Use in new projects that copy this starter pack.
-  Runtime/compiler host Python files are immutable.
+  The starter pack itself contains authoring assets only; if runtime/compiler
+  host Python files are copied into the target project, treat them as immutable.
 tools:
   - read_file
   - create_file
@@ -28,7 +29,7 @@ Write and refactor `.nela` files only.
 
 ## Immutable Files Policy
 
-When these files exist in a project, they are read-only:
+When these files are later copied into a target project, they are read-only:
 - `src/*.py`
 - `tools/*.py`
 - `Makefile`
