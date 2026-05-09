@@ -440,11 +440,16 @@ NELA-C compiler: NELA-S → interaction net bytecode (`.nelac`).
 |---|---|---|
 | `nela_compiler.py` | ✅ done | NELA-S AST → interaction net graph → `.nelac` binary |
 | Agent vocabulary | ✅ done | 25 agents: CON/DUP/ERA/PAR/INT/FLT/STR/BOO/APP/LAM + arithmetic + list ops |
-| Bytecode format | ✅ done | `NELAC` magic + version(u8) + node_count(u32) + node table + root(u32) |
+| Bytecode format | ✅ done | `NELAC` magic + version(u8) + node_count(u32) + node table + root(u32); stable v3/v4 include explicit node IDs so decode is record-order independent |
 | Serialise / deserialise | ✅ done | `net_to_bytes` / `bytes_to_net` / `bytes_to_py` roundtrip |
 | Disassembler | ✅ done | `disassemble(bytes)` → human-readable node listing |
 | `compile_and_run` API | ✅ done | Compiles, reduces, serialises; returns `(python_result, bytes)` |
 | 19 compiler tests | ✅ done | qs, mergesort, wolf_game (deg_to_rad, norm_angle, is_wall, key_action, use_door, …) |
+
+Compatibility note:
+
+- Legacy v1/v2 `.nelac` files are still supported.
+- Stable v3/v4 format removes node record order dependency by storing explicit node IDs.
 
 Run compiler: `python3 src/nela_compiler.py`
 

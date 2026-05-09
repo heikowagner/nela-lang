@@ -201,10 +201,11 @@ def compile_and_run(prog: dict, fn_name: str, *args) -> tuple[Any, bytes]:
     Compile fn_name(*args) from prog, run it eagerly, and return:
       (python_result, nelac_bytes)
     nelac_bytes is the serialised normal-form net for the result value.
+    Uses stable-id format (v3) so node record order is irrelevant.
     """
 
-def net_to_bytes(net: Net, root_nid: int) -> bytes:
-    """Serialise Net to .nelac binary (b"NELAC" header + node table)."""
+def net_to_bytes(net: Net, root_nid: int, fn_table=None, stable_ids: bool=False) -> bytes:
+    """Serialise Net to .nelac binary (supports legacy v1/v2 and stable v3/v4)."""
 
 def bytes_to_net(data: bytes) -> tuple[Net, int]:
     """Deserialise .nelac binary back to (Net, root_nid)."""
@@ -220,15 +221,34 @@ def disassemble(data: bytes) -> str:
 
 ```
 b"NELAC"          magic (5 bytes)
-version: u8       format version (currently 1)
+version: u8       format version
 node_count: u32   number of nodes (big-endian)
 nodes[]:          node table
-  tag: u8         agent type (see Agent Tag Table below)
-  arity: u8       number of ports
-  meta: i64       payload (int/float bits/string length/bool; big-endian)
-  ports[arity]: u32  port connections (node index; 0xFFFFFFFF = unconnected)
-root: u32         index of root node in node table
+    v1/v2 records:
+        tag: u8         agent type
+        arity: u8       number of ports
+        meta: i64       payload (int/float bits/string length/bool; big-endian)
+        ports[arity+1]: u32  port node IDs (0xFFFFFFFF = unconnected)
+    v3/v4 records:
+        nid: u32        explicit node ID (order-independent decoding)
+        tag: u8
+        arity: u8
+        meta: i64
+        ports[arity+1]: u32
+root: u32         node ID of root output
 ```
+
+Version guide:
+
+- v1: legacy, implicit node IDs by stream order
+- v2: legacy + function table, implicit node IDs by stream order
+- v3: stable IDs, order-independent node record decoding
+- v4: stable IDs + function table
+
+Compatibility behavior:
+
+- `compile_program(...)` keeps emitting legacy versions for C runtime compatibility.
+- `compile_and_run(...)` emits stable-id version for Python-side robustness.
 
 ### Agent Tag Table
 

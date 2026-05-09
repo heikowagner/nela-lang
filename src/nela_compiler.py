@@ -380,6 +380,8 @@ class Compiler:
 MAGIC   = b"NELAC"
 VERSION = 1
 VERSION_FNTAB = 2  # extended format with function table
+VERSION_STABLE = 3
+VERSION_STABLE_FNTAB = 4  # v3 + function table
 
 
 def _encode_node(node: Node) -> bytes:
@@ -390,16 +392,31 @@ def _encode_node(node: Node) -> bytes:
     return data
 
 
+def _encode_node_stable(node: Node) -> bytes:
+    """Encode node with explicit nid to make record order irrelevant."""
+    arity = len(node.ports) - 1
+    data  = struct.pack(">IBBq", node.nid, node.tag, arity, node.meta)
+    for p in node.ports:
+        data += struct.pack(">I", p & 0xFFFFFFFF)
+    return data
+
+
 def net_to_bytes(net: Net, root_nid: int,
-                 fn_table: "list[tuple[Net, int]] | None" = None) -> bytes:
+                 fn_table: "list[tuple[Net, int]] | None" = None,
+                 stable_ids: bool = False) -> bytes:
     """Serialise a Net to .nelac bytes.
     If fn_table is provided (list of (sub_net, root_nid) pairs), use version 2
     which appends a function table section after the main net root.
     """
     nodes  = sorted(net._nodes.values(), key=lambda n: n.nid)
-    version = VERSION_FNTAB if fn_table is not None else VERSION
+    if stable_ids:
+        version = VERSION_STABLE_FNTAB if fn_table is not None else VERSION_STABLE
+        enc = _encode_node_stable
+    else:
+        version = VERSION_FNTAB if fn_table is not None else VERSION
+        enc = _encode_node
     header = MAGIC + struct.pack(">BI", version, len(nodes))
-    body   = b"".join(_encode_node(n) for n in nodes)
+    body   = b"".join(enc(n) for n in nodes)
     footer = struct.pack(">I", root_nid)
     result = header + body + footer
     if fn_table is not None:
@@ -407,7 +424,7 @@ def net_to_bytes(net: Net, root_nid: int,
         for fn_net, fn_root in fn_table:
             fn_nodes = sorted(fn_net._nodes.values(), key=lambda n: n.nid)
             result  += struct.pack(">I", len(fn_nodes))
-            result  += b"".join(_encode_node(n) for n in fn_nodes)
+            result  += b"".join(enc(n) for n in fn_nodes)
             result  += struct.pack(">I", fn_root)
     return result
 
@@ -418,16 +435,47 @@ def bytes_to_net(data: bytes) -> tuple["Net", int]:
     offset = 5
     version, node_count = struct.unpack_from(">BI", data, offset); offset += 5
     net = Net()
-    for _ in range(node_count):
-        tag, arity = struct.unpack_from(">BB", data, offset); offset += 2
-        meta,      = struct.unpack_from(">q",  data, offset); offset += 8
-        ports = []
-        for _ in range(arity + 1):
-            p, = struct.unpack_from(">I", data, offset); offset += 4
-            ports.append(p)
-        nid = net.alloc(tag, arity, meta)
-        for i, p in enumerate(ports):
-            net.node(nid).ports[i] = p
+
+    # v1/v2: implicit nids by stream order (legacy, order-dependent)
+    if version in (VERSION, VERSION_FNTAB):
+        for _ in range(node_count):
+            tag, arity = struct.unpack_from(">BB", data, offset); offset += 2
+            meta,      = struct.unpack_from(">q",  data, offset); offset += 8
+            ports = []
+            for _ in range(arity + 1):
+                p, = struct.unpack_from(">I", data, offset); offset += 4
+                ports.append(p)
+            nid = net.alloc(tag, arity, meta)
+            for i, p in enumerate(ports):
+                net.node(nid).ports[i] = p
+
+    # v3/v4: explicit nids per record (order-independent)
+    elif version in (VERSION_STABLE, VERSION_STABLE_FNTAB):
+        records = []
+        max_nid = -1
+        for _ in range(node_count):
+            nid, tag, arity = struct.unpack_from(">IBB", data, offset); offset += 6
+            meta, = struct.unpack_from(">q", data, offset); offset += 8
+            ports = []
+            for _ in range(arity + 1):
+                p, = struct.unpack_from(">I", data, offset); offset += 4
+                ports.append(p)
+            records.append((nid, tag, arity, meta, ports))
+            if nid > max_nid:
+                max_nid = nid
+
+        # Allocate exactly the referenced node IDs.
+        for nid, tag, arity, meta, _ports in records:
+            net._nodes[nid] = Node(nid, tag, arity, meta)
+        net._counter = max_nid + 1
+
+        # Fill ports in a second pass.
+        for nid, _tag, _arity, _meta, ports in records:
+            for i, p in enumerate(ports):
+                net.node(nid).ports[i] = p
+    else:
+        raise AssertionError(f"Unsupported .nelac version: {version}")
+
     root, = struct.unpack_from(">I", data, offset)
     return net, root
 
@@ -446,15 +494,19 @@ def disassemble(data: bytes) -> str:
     version, node_count = struct.unpack_from(">BI", data, 5)
     lines.append(f"NELAC v{version}  nodes={node_count}")
     offset = 10
-    for _ in range(node_count):
-        tag, arity = struct.unpack_from(">BB", data, offset); offset += 2
+    for idx in range(node_count):
+        if version in (VERSION_STABLE, VERSION_STABLE_FNTAB):
+            nid, tag, arity = struct.unpack_from(">IBB", data, offset); offset += 6
+        else:
+            nid = idx
+            tag, arity = struct.unpack_from(">BB", data, offset); offset += 2
         meta,      = struct.unpack_from(">q",  data, offset); offset += 8
         ports = []
         for _ in range(arity + 1):
             p, = struct.unpack_from(">I", data, offset); offset += 4
             ports.append("_" if p == _NULL else str(p))
         name = _TAG_NAMES.get(tag, f"0x{tag:02x}")
-        lines.append(f"  {name:<6} meta={meta:<14} ports=[{', '.join(ports)}]")
+        lines.append(f"  #{nid:<4} {name:<6} meta={meta:<14} ports=[{', '.join(ports)}]")
     root, = struct.unpack_from(">I", data, offset)
     lines.append(f"  ROOT  → node {root}")
     return "\n".join(lines)
@@ -471,7 +523,7 @@ def compile_and_run(prog: dict, fn_name: str, *arg_values: Any) -> tuple[Any, by
     c      = Compiler(prog)
     root   = c.compile_call(fn_name, list(arg_values))
     result = c._node_to_py(root)
-    bc     = net_to_bytes(c.net, root)
+    bc     = net_to_bytes(c.net, root, stable_ids=True)
     return result, bc
 
 
