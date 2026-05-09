@@ -16,6 +16,10 @@ import select
 import sys
 import termios
 import tty
+import io
+import math
+import struct
+import wave
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))
@@ -78,6 +82,8 @@ _pygame_clock = None
 _font = None
 _pixel_size = 16
 _sidebar_width = 240
+_audio_ready = False
+_sfx = {}
 
 
 def _split_payload(payload: list):
@@ -86,6 +92,65 @@ def _split_payload(payload: list):
     if isinstance(payload, list) and len(payload) >= 5:
         return payload[0], payload[1], payload[2], payload[3], payload[4], _INIT_STATE
     return payload, [], [], 0, 0, _INIT_STATE
+
+
+def _make_tone(freq_hz: float, duration_ms: int, volume: float) -> "pygame.mixer.Sound":
+    sample_rate = 22050
+    count = max(1, int(sample_rate * duration_ms / 1000))
+    amp = int(32767 * volume)
+    frames = bytearray()
+    for i in range(count):
+        v = int(amp * math.sin(2.0 * math.pi * freq_hz * (i / sample_rate)))
+        frames.extend(struct.pack("<h", v))
+
+    data = io.BytesIO()
+    with wave.open(data, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(bytes(frames))
+    data.seek(0)
+    return pygame.mixer.Sound(file=data)
+
+
+def _init_audio() -> bool:
+    global _sfx
+    if not PYGAME_AVAILABLE:
+        return False
+    try:
+        if pygame.mixer.get_init() is None:
+            pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
+        _sfx = {
+            "step": _make_tone(150.0, 35, 0.20),
+            "door": _make_tone(520.0, 95, 0.28),
+            "enemy": _make_tone(240.0, 75, 0.24),
+        }
+        return True
+    except Exception as e:
+        print(f"⚠️  Audio init failed: {e}", file=sys.stderr)
+        _sfx = {}
+        return False
+
+
+def _play_sfx(name: str) -> None:
+    if not _audio_ready:
+        return
+    snd = _sfx.get(name)
+    if snd is None:
+        return
+    try:
+        snd.play()
+    except Exception:
+        pass
+
+
+def _sound_event(sound_id: int) -> None:
+    if sound_id == 0:
+        _play_sfx("step")
+    elif sound_id == 1:
+        _play_sfx("door")
+    elif sound_id == 2:
+        _play_sfx("enemy")
 
 
 def _init_gpu_framebuffer() -> bool:
@@ -221,12 +286,17 @@ def _print_frame_terminal(payload: list) -> None:
 
 
 def main() -> None:
+    global _audio_ready
     if _init_gpu_framebuffer():
         print("🎮 GPU Framebuffer READY (PyGame)")
     else:
         print("⚠️  Terminal mode (PyGame unavailable)")
 
-    token = IOToken(_getch, _print_frame)
+    _audio_ready = _init_audio()
+    if _audio_ready:
+        print("🔊 Audio READY")
+
+    token = IOToken(_getch, _print_frame, _sound_event)
     run_program(_prog, "game_loop", list(_INIT_STATE), list(MAP), W, token)
 
     if _pygame_screen:

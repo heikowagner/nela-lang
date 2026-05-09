@@ -593,9 +593,9 @@ def init_enemies =
   ]
 
 -- ── @SECTION_MAIN [512-541] ───────────────────────────────────────────────────
--- Functions: render_packet, game_loop_rec, game_loop
+-- Functions: render_packet, emit_sound, game_loop_rec, game_loop
 -- Purpose: Render orchestration; main game loop; IOToken threading
--- Calls: render_frame, build_minimap, visible_enemies, update_enemies, update, use_door, key_action, io_print, io_key
+-- Calls: render_frame, build_minimap, visible_enemies, update_enemies, update, use_door, key_action, io_print, io_key, io_sound
 -- Called_by: examples/wolf/src/wolf_player.py (entry point)
 -- Key_vars: [packet, frame, minimap, state, map, enemies, doors, steps, tok, action]
 -- Details:
@@ -607,6 +607,9 @@ def init_enemies =
 
 def render_packet frame minimap enemies doors steps state =
   [frame, minimap, enemies, doors, steps, state]
+
+def emit_sound sid token =
+  io_sound sid token
 
 -- ── IOToken-based game loop with stats + enemies (v0.11) ───────────────────
 
@@ -634,7 +637,12 @@ def game_loop_rec state map w enemies doors steps token =
     let state2 = if action <= 3 then update state action map2 w else state in
     let steps2 = if action <= 3 then steps + 1 else steps in
     let enemies2 = update_enemies enemies (get state2 0) (get state2 1) map2 w in
-    game_loop_rec state2 map2 w enemies2 doors2 steps2 tok2
+    let tok3 = if action <= 3 then emit_sound 0 tok2 else tok2 in
+    let tok4 = if action == 4 then (if door_cell == 1 then emit_sound 1 tok3 else tok3) else tok3 in
+    let vis0 = len visible in
+    let vis1 = len (visible_enemies enemies2 map2 w (get state2 0) (get state2 1)) in
+    let tok5 = if vis1 > vis0 then emit_sound 2 tok4 else tok4 in
+    game_loop_rec state2 map2 w enemies2 doors2 steps2 tok5
 
 def game_loop state map w token =
   game_loop_rec state map w [[2.5, 2.5, 0], [5.5, 3.5, 0], [3.5, 5.5, 0]] 0 0 token

@@ -13,7 +13,7 @@ Supported ops:
   sin, cos, sqrt, floor, ceil, round, abs, ord, chr,
   eq, lt, le, gt, ge, and, or, not,
   filter, append,
-  io_key, io_print
+    io_key, io_print, io_sound
 """
 
 import json, math, os, sys, time
@@ -30,13 +30,14 @@ class IOToken:
     io_key / io_print call consumes this token and returns a fresh one.
     The Python harness creates the initial token; NELA-S holds it thereafter.
     """
-    def __init__(self, read_key, print_frame):
+    def __init__(self, read_key, print_frame, play_sound=None):
         self.read_key    = read_key      # () -> str (single char)
         self.print_frame = print_frame   # (list[list[int]]) -> None
+        self.play_sound  = play_sound    # (int) -> None
 
     def _fresh(self):
         """Return a logically fresh token (linearity by convention)."""
-        return IOToken(self.read_key, self.print_frame)
+        return IOToken(self.read_key, self.print_frame, self.play_sound)
 
 
 # ── Interpreter ────────────────────────────────────────────────────────────────
@@ -216,6 +217,15 @@ def eval_expr(expr: dict, env: dict, defs: dict) -> Any:
         frame = eval_expr(expr["l"], env, defs)
         token = eval_expr(expr["r"], env, defs)
         token.print_frame(frame)
+        return token._fresh()
+
+    # io_sound sid token  →  token'   — linear: consumes token
+    if op == "io_sound":
+        sid = int(eval_expr(expr["l"], env, defs))
+        token = eval_expr(expr["r"], env, defs)
+        play_sound = getattr(token, "play_sound", None)
+        if play_sound is not None:
+            play_sound(sid)
         return token._fresh()
 
     if op == "and":

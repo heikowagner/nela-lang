@@ -640,6 +640,9 @@ def _parse_apply(ts):
             # io_print frame token — linear I/O print (v0.9)
             if name == "io_print" and len(args) == 2:
                 return {"op": "io_print", "l": args[0], "r": args[1]}
+            # io_sound sid token — linear I/O sound event (v0.12)
+            if name == "io_sound" and len(args) == 2:
+                return {"op": "io_sound", "l": args[0], "r": args[1]}
             return {"op": "call", "fn": name, "a": args}
         raise SyntaxError(f"Application of non-name {func!r}")
     return func
