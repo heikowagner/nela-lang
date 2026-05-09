@@ -18,7 +18,8 @@ import termios
 import tty
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
 from nela_parser import parse_file
 from nela_runtime import run_program, IOToken
@@ -68,7 +69,7 @@ MINIMAP_COLORS = {
 }
 CHARS = ["  ", "··", "▒▒", "▓▓", "██", "@@", "░░", "..", "::", "==", "++", "**", "##", "%%"]
 
-_GAME_NELA = os.path.join(os.path.dirname(_HERE), "examples", "wolf_game.nela")
+_GAME_NELA = os.path.join(os.path.dirname(_HERE), "wolf_game.nela")
 _prog = parse_file(_GAME_NELA)
 _INIT_STATE = [1.5, 1.5, 90]
 
@@ -173,6 +174,11 @@ def _getch_gpu() -> str:
 
 def _getch_terminal() -> str:
     fd = sys.stdin.fileno()
+    if not sys.stdin.isatty():
+        ch = sys.stdin.read(1)
+        if ch == "\x03" or ch == "":
+            return "q"
+        return ch
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)

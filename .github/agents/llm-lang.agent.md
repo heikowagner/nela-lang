@@ -122,8 +122,8 @@ See **Worked Examples** below for complete programs. For the full grammar, see t
 | `examples/quicksort.nela` | Recursive sort; `match` / `filter` / `append` / `call` |
 | `examples/mergesort.nela` | Three cooperating functions; `pair`/`fst`/`snd`; multi-arg calls |
 | `examples/stack_vm.nela` | Stack-based VM with 7 opcodes; runtime dispatch on instruction type |
-| `examples/wolf_grid.nela` | Discrete DDA grid engine; BFS reachability; `div`/`mod`; `(-1)` neg args |
-| `examples/wolf_game.nela` | Playable Wolfenstein raycaster. **All logic in NELA-S.** Float positions, direct `sin`/`cos`, O(1) `get` map lookup. Python: keyboard + print only. |
+| `examples/wolf/wolf_grid.nela` | Discrete DDA grid engine; BFS reachability; `div`/`mod`; `(-1)` neg args |
+| `examples/wolf/wolf_game.nela` | Playable Wolfenstein raycaster. **All logic in NELA-S.** Float positions, direct `sin`/`cos`, O(1) `get` map lookup. Python: keyboard + print only. |
 
 Run all tests: `python3 src/nela_runtime.py`
 
@@ -138,7 +138,7 @@ NELA-S.
 The Wolf game is a complete case study in LLM-native design:
 
 ```
-Python Harness (src/wolf_player.py)     NELA-S Logic (examples/wolf_game.nela)
+Python Harness (examples/wolf/src/wolf_player.py)     NELA-S Logic (examples/wolf/wolf_game.nela)
 ─────────────────────────────────────    ────────────────────────────────────
 Keyboard capture (_getch)         ──→    key_action(c)           [c → action code]
        ↓                                         ↓

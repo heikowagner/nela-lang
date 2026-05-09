@@ -16,8 +16,8 @@
 --   Source: github.com/maksimKorzh/wolfenstein-pygame (extracted pure functions)
 --
 -- COMPANION:
---   wolf_game.nela extends this with angle-based raycasting + trig tables
---   (trig supplied by Python harness: wolf_player.py)
+--   examples/wolf/wolf_game.nela extends this with angle-based raycasting + trig tables
+--   (trig supplied by Python harness: examples/wolf/src/wolf_player.py)
 --
 -- COORDINATES:
 --   Integers x, y for grid cells

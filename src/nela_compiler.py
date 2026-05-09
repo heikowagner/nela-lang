@@ -1207,6 +1207,9 @@ if __name__ == "__main__":
     def _load(path):
         return parse_file(os.path.join(base, "examples", path))
 
+    def _load_wolf(path):
+        return parse_file(os.path.join(base, "examples", "wolf", path))
+
     def _tc(got, ref):
         if isinstance(ref, float): return abs(got - ref) < 1e-9
         return got == ref
@@ -1238,7 +1241,7 @@ def qs lst =
   | h::t = qs [x <- t | x <= h] ++ [h] ++ qs [x <- t | x > h]
 """)
     ms_prog   = _load("mergesort.nela")
-    wg_prog   = _load("wolf_game.nela")
+    wg_prog   = _load_wolf("wolf_game.nela")
 
     MAP8 = [
         1,1,1,1,1,1,1,1,

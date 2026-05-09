@@ -21,7 +21,7 @@ applyTo: "**/*.nela,**/*.nela.json,**/nela/**"
 > ports + root pointer). The current compiler reduces eagerly to normal form before serialising;
 > v0.11 will emit unreduced nets with active pairs and run the SIC reducer on-net.
 >
-> **Mission constraint:** The Python harness (`wolf_player.py`) is I/O-only. All game logic
+> **Mission constraint:** The Python harness (`examples/wolf/src/wolf_player.py`) is I/O-only. All game logic
 > (raycasting, frame assembly, shading, movement, collision, trig) lives in NELA-S. Python provides
 > only: raw keyboard input and `print`. Zero precomputed data (no trig tables, no constants).
 

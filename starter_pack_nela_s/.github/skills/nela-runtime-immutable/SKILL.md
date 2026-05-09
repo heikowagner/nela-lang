@@ -2,7 +2,7 @@
 name: nela-runtime-immutable
 description: >
   Enforces immutable runtime/tooling policy for projects bootstrapped from this starter pack.
-applyTo: "src/*.py,tools/*.py,Makefile"
+applyTo: "*.py,tools/*.py,Makefile"
 ---
 
 # Immutable Runtime Policy (Starter-Pack Projects)
@@ -16,7 +16,7 @@ Apply this policy only after runtime/tool files are copied into the target proje
 If runtime/tool files were copied from the starter pack, they must not be modified during normal feature work.
 
 Protected paths:
-- `src/*.py`
+- `*.py`
 - `tools/*.py`
 - `Makefile`
 

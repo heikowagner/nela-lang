@@ -6,7 +6,7 @@ This document describes the code organization strategy specifically designed for
 
 **Single Monolithic File + Algorithmic Index = LLM-Friendly Codebase**
 
-The NELA game lives in one file (`examples/wolf_game.nela`) with a machine-parseable index header. This avoids:
+The NELA game lives in one file (`examples/wolf/wolf_game.nela`) with a machine-parseable index header. This avoids:
 - Module import complexity (NELA has no import system)
 - Token context loss from fragmentation
 - LLM confusion about file boundaries
@@ -19,7 +19,7 @@ The NELA game lives in one file (`examples/wolf_game.nela`) with a machine-parse
 
 ### 1. The Index Header (Lines 1-50)
 
-Located at the very top of `examples/wolf_game.nela`:
+Located at the very top of `examples/wolf/wolf_game.nela`:
 
 ```
 -- SECTION INDEX FOR LLM NAVIGATION (auto-maintained):
@@ -113,9 +113,9 @@ This constraint:
 **Status quo:**
 ```bash
 # New developer generates textures
-python3 tools/build_wolf_textures.py
+python3 examples/wolf/tools/build_wolf_textures.py
 
-# NELA constants are injected into wolf_game.nela
+# NELA constants are injected into examples/wolf/wolf_game.nela
 # But: human developer must manually update the file's @SECTION_TEXTURES marker
 # Risk: header goes out of sync → future LLM queries are incorrect
 ```
@@ -123,7 +123,7 @@ python3 tools/build_wolf_textures.py
 **New Workflow:**
 ```bash
 # New developer generates textures
-python3 tools/build_wolf_textures.py
+python3 examples/wolf/tools/build_wolf_textures.py
 
 # Auto-check header sync
 make check-header
@@ -171,7 +171,7 @@ make check-header
 make fix-header
 
 # Programmatic check (in scripts)
-python3 tools/validate_nela_header.py examples/wolf_game.nela  # exit code 1 if bad
+python3 tools/validate_nela_header.py examples/wolf/wolf_game.nela  # exit code 1 if bad
 ```
 
 ---
@@ -184,7 +184,7 @@ When editing `wolf_game.nela`, LLMs must verify:
    - Validator catches this via call graph in header metadata
 
 2. **All game logic in NELA-S:** No Python sprite/physics code
-   - Python (`src/wolf_player.py`) is framebuffer + input only
+   - Python (`examples/wolf/src/wolf_player.py`) is framebuffer + input only
 
 3. **Texture sampling is in `frame_cell`:** No external rendering
    - Keep texture reads localized to frame assembly
@@ -213,7 +213,7 @@ When using a Model Context Protocol (MCP) server or VS Code Copilot integration:
 
 ```yaml
 # .copilot-instructions.md
-When editing examples/wolf_game.nela:
+When editing examples/wolf/wolf_game.nela:
 1. Always start by reading lines 1-50 to understand section organization
 2. Use section line numbers in your responses (e.g., "Edit SECTION_ENEMIES [397-470]")
 3. Never suggest cross-file imports; NELA has no module system
@@ -238,7 +238,7 @@ make check-header      # Passes ✓
 # Read metadata → called by render_packet in SECTION_MAIN
 
 # Step 3: Edit the code
-# Edit examples/wolf_game.nela
+# Edit examples/wolf/wolf_game.nela
 # - Modify minimap_cell to apply rotation relative to player angle
 # - Update all minimap_row and build_minimap functions as needed
 
@@ -248,7 +248,7 @@ make fix-header       # If out of sync, regenerate
 python3 src/nela_runtime.py   # Run tests
 
 # Step 5: Commit
-git add examples/wolf_game.nela tools/validate_nela_header.py
+git add examples/wolf/wolf_game.nela tools/validate_nela_header.py
 git commit -m "feat: rotate minimap with player angle; updated header index"
 ```
 

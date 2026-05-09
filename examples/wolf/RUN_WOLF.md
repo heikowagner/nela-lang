@@ -1,8 +1,8 @@
-# Running Wolf Game — NELA-S v0.11 (LLM-Optimized Single-File Architecture)
+# Running Wolf Game — NELA-S v0.11 (Separated Wolf Demo)
 
 ## 🏗️ Architecture: LLM-Friendly Organization
 
-**wolf_game.nela** is structured as a single file with algorithmic organization for fast LLM navigation:
+**examples/wolf/wolf_game.nela** is structured as a single file with algorithmic organization for fast LLM navigation:
 
 ```
 SECTION_TRIG        [51-65]      — Trigonometry & angle normalization
@@ -33,7 +33,7 @@ SECTION_MAIN        [512-541]    — Game loop & I/O threading
 cd /Users/heikowagner/llm_coder
 
 # 🎮 RECOMMENDED: Python runtime — fully interactive
-python3 src/wolf_player.py
+python3 examples/wolf/src/wolf_player.py
 
 # Verify LLM file structure is valid before playing:
 make check-header
@@ -42,7 +42,7 @@ python3 << 'COMPILE'
 import sys; sys.path.insert(0, 'src')
 from nela_parser import parse_file
 from nela_compiler import compile_program
-prog = parse_file('examples/wolf_game.nela')
+prog = parse_file('examples/wolf/wolf_game.nela')
 bytecode = compile_program(prog, "game_loop", [1.5, 1.5, 90], [1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,0,1,1,0,1,0,1,1,0,1,0,0,0,0,1,1,0,0,0,1,0,0,1,1,0,1,0,0,1,0,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1], 8)
 open('wolf_game.nelac', 'wb').write(bytecode)
 COMPILE
@@ -88,7 +88,7 @@ make fix-header    # Regenerates header from actual code
 ## ✅ Python Runtime (RECOMMENDED - Fully Interactive)
 
 ```bash
-python3 src/wolf_player.py
+python3 examples/wolf/src/wolf_player.py
 ```
 
 **This is the full interactive Wolfenstein experience:**
@@ -107,16 +107,16 @@ This downloads CC0 texture packs from ambientCG, converts them to compact PNG pr
 and generates NELA-S texture tables.
 
 ```bash
-/Users/heikowagner/llm_coder/.venv/bin/python tools/build_wolf_textures.py
+/Users/heikowagner/llm_coder/.venv/bin/python examples/wolf/tools/build_wolf_textures.py
 ```
 
 Generated assets:
-- `assets/textures/*.png` (16x16 previews)
-- `examples/wolf_textures_generated.nela` (generated texture constants)
+- `examples/wolf/assets/textures/*.png` (16x16 previews)
+- `examples/wolf/wolf_textures_generated.nela` (generated texture constants)
 
 Important architecture note:
-- Texture sampling and enemy-in-render logic run in **NELA-S** (`examples/wolf_game.nela`)
-- Python (`src/wolf_player.py`) only performs framebuffer display + input
+- Texture sampling and enemy-in-render logic run in **NELA-S** (`examples/wolf/wolf_game.nela`)
+- Python (`examples/wolf/src/wolf_player.py`) only performs framebuffer display + input
 
 ---
 
@@ -133,7 +133,7 @@ import sys; sys.path.insert(0, 'src')
 from nela_parser import parse_file
 from nela_compiler import compile_program
 
-prog = parse_file('examples/wolf_game.nela')
+prog = parse_file('examples/wolf/wolf_game.nela')
 bytecode = compile_program(
     prog, "game_loop",
     [1.5, 1.5, 90],  # state
@@ -158,9 +158,9 @@ echo 'q' | ./nelac wolf_game.nelac --game
 **Python Path** (RECOMMENDED):
 ```
 Parse NELA-S source
-    ↓ [nela_parser.py]
+    ↓ [src/nela_parser.py]
 Typed expression DAG
-    ↓ [nela_runtime.py interpreter + IOToken callbacks]
+    ↓ [src/nela_runtime.py interpreter + IOToken callbacks]
 Direct evaluation with frame rendering + key I/O
     ↓ [game_loop recurses in Python memory]
 Interactive gameplay
@@ -169,9 +169,9 @@ Interactive gameplay
 **C Path** (For reference / testing):
 ```
 Parse NELA-S source
-    ↓ [nela_parser.py]
+    ↓ [src/nela_parser.py]
 Typed expression DAG
-    ↓ [nela_compiler.py]
+    ↓ [src/nela_compiler.py]
 Compiled interaction net bytecode
     ↓  [nelac C runtime]
 Bytecode execution (I/O callbacks not yet fully integrated)

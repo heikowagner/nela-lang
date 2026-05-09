@@ -23,11 +23,11 @@ test: nelac
 # LLM header validation: ensure NELA file indexes are always synchronized
 # Use this after any game logic edits to verify the header is up-to-date
 validate-header:
-	python3 tools/validate_nela_header.py examples/wolf_game.nela
+	python3 tools/validate_nela_header.py examples/wolf/wolf_game.nela
 
 # Alias for CI/CD pipelines
 check-header: validate-header
 
 # Regenerate header (CAREFUL: use only after bulk refactors)
 fix-header:
-	python3 tools/validate_nela_header.py examples/wolf_game.nela --regenerate
+	python3 tools/validate_nela_header.py examples/wolf/wolf_game.nela --regenerate

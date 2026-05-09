@@ -88,7 +88,7 @@ Input:  [20, 19, ..., 1]       (20 elements)
 Output: [1, 2, ..., 20]        ✓
 ```
 
-### Wolf Grid — `examples/wolf_grid.nela`
+### Wolf Grid — `examples/wolf/wolf_grid.nela`
 
 Pure integer raycasting engine, ported from
 [`maksimKorzh/wolfenstein-pygame`](https://github.com/maksimKorzh/wolfenstein-pygame).
@@ -107,7 +107,7 @@ Discrete DDA (cardinal directions), BFS reachability, no trig needed.
 scan_4 map 1 1 5  →  [3, 3, 1, 1]   (open corridor right/down, wall left/up)
 ```
 
-### Wolf Game — `examples/wolf_game.nela` + `src/wolf_player.py`  *(v0.9 — full game loop in NELA-S)*
+### Wolf Game — `examples/wolf/wolf_game.nela` + `examples/wolf/src/wolf_player.py`  *(v0.9 — full game loop in NELA-S)*
 
 Fully playable Wolfenstein raycaster. **All game logic is pure NELA-S.** Python is strictly I/O:
 raw keyboard and `print`. Zero precomputed data — no trig tables, no constants.
@@ -134,7 +134,7 @@ State: `[px, py, angle]` where `px`, `py` are floats.
 | `key_action c` | Maps char → action code (0=fwd, 1=back, 2=left, 3=right, 4=door, 5=quit) |
 | `game_loop state map w token` | Full IOToken loop: io_print → io_key → update → recurse until quit |
 
-**Run the game:** `cd src && python3 wolf_player.py`  (W/S = move, A/D = turn, Q = quit)
+**Run the game:** `python3 examples/wolf/src/wolf_player.py`  (W/S = move, A/D = turn, Q = quit)
 
 ---
 
@@ -269,14 +269,24 @@ llm_coder/
 │   ├── quicksort.nela           NELA-S: recursive quicksort
 │   ├── mergesort.nela           NELA-S: three-function mergesort with Pair ADT
 │   ├── stack_vm.nela            NELA-S: complete stack-based virtual machine
-│   ├── wolf_grid.nela           NELA-S: discrete DDA grid engine + BFS reachability
-│   ├── wolf_game.nela           NELA-S: angle raycaster, frame assembly, game update
 │   └── *.nela.json              Legacy IR (JSON AST — still loadable)
 ├── src/
 │   ├── nela_parser.py           ML/Haskell-like syntax parser (.nela → dict AST)
 │   ├── nela_runtime.py          Surface language interpreter + test harness (92 tests)
 │   ├── nela_compiler.py         NELA-C compiler: AST → interaction net → .nelac bytecode
-│   └── wolf_player.py           I/O-only harness: keyboard input and terminal output only
+│   └── nelac_runtime.c          C runtime for .nelac bytecode
+│   ├── wolf/
+│   │   ├── wolf_grid.nela       NELA-S: discrete DDA grid engine + BFS reachability
+│   │   ├── wolf_game.nela       NELA-S: angle raycaster, frame assembly, game update
+│   │   ├── wolf_textures_generated.nela  Generated texture constants
+│   │   ├── src/
+│   │   │   └── wolf_player.py   I/O-only harness: keyboard input and terminal output only
+│   │   ├── tools/
+│   │   │   └── build_wolf_textures.py  Texture asset pipeline
+│   │   ├── assets/
+│   │   │   └── textures/        16x16 preview textures
+│   │   ├── RUN_WOLF.md          Wolf-specific run and build notes
+│   │   └── LLM_CODE_STRUCTURE.md  Wolf-specific LLM structure notes
 └── .github/
     ├── agents/
     │   └── llm-lang.agent.md    VS Code agent: LLM Language Architect
@@ -333,7 +343,7 @@ In your new repo, create:
 
 - `.instructions.md` (project workflow and constraints)
 - `README.md` (project mission and architecture)
-- `src/*.nela` (new NELA-S source programs — **all project source here**)
+- `main.nela` (new NELA-S source program at project root)
 - `.copilot-instructions.md` (optional: agent customization)
 - Optional host harness files (standalone Python/other scripts, if needed for I/O or external integration)
 
@@ -348,13 +358,11 @@ my-nela-project/
 │       ├── nela-s-writing/
 │       ├── nela-runtime-immutable/
 │       └── ...
-├── src/
-│   ├── module_a.nela                      (new NELA-S source)
-│   ├── module_b.nela
-│   ├── nela_parser.py                     (temporary copied toolchain)
-│   ├── nela_runtime.py                    (temporary copied toolchain)
-│   ├── nela_compiler.py                   (temporary copied toolchain)
-│   └── my_host.py                         (optional: custom I/O harness)
+├── main.nela                              (new NELA-S source)
+├── nela_parser.py                         (temporary copied toolchain)
+├── nela_runtime.py                        (temporary copied toolchain)
+├── nela_compiler.py                       (temporary copied toolchain)
+├── my_host.py                             (optional: custom I/O harness)
 ├── tools/
 │   └── validate_nela_header.py            (temporary copied tool)
 ├── .instructions.md                       (new: project policy)
@@ -368,8 +376,7 @@ my-nela-project/
 my-nela-project/
 ├── .github/
 │   └── ...
-├── src/
-│   └── *.nela                             (all NELA-S source)
+├── main.nela                              (single NELA-S program at root)
 ├── .nela.toml or pyproject.toml           (reference external toolchain version)
 ├── .instructions.md
 ├── README.md
@@ -394,7 +401,7 @@ Example: a project with 50 path references per LLM context window saves 500–15
 
 - Flatten directory trees; avoid `_tools/subdir/subdir/file.py` — use `_t/file.py` instead
 - Group by semantic function (source, tools, metadata) rather than by file type
-- Single source directory (`src/`) with all `.nela` files minimizes context bloat
+- For single-program projects, a root-level `main.nela` is simpler than a dedicated `src/` directory
 - Separate immutable tools from mutable source — allows LLM to skip reasoning about frozen code
 - Use hyphens in paths (`_src-nela`, `_t-validate`) if disambiguation needed; avoid double underscores
 
@@ -407,9 +414,7 @@ my-nela-project/
 ├── .gh/skills/
 │   ├── nela-s-writing/
 │   └── nela-runtime-immutable/
-├── src/
-│   ├── module_a.nela
-│   └── module_b.nela
+├── main.nela
 ├── _t/                         (immutable toolchain; _t = _tools abbreviation)
 │   ├── parser.py
 │   ├── runtime.py
@@ -421,9 +426,9 @@ my-nela-project/
 └── my_host.py
 ```
 
-### 4) Add Your First NELA Module
+### 4) Add Your First NELA Program
 
-Create a new file in `src/` and follow the header standard from
+Create `main.nela` at project root and follow the header standard from
 `.github/skills/nela-s-writing/SKILL.md`.
 
 Minimum workflow:
@@ -511,7 +516,7 @@ their rewrite rules are actually specified.
 | Neg literals in arg position | ✅ done | Use `(-1)` paren syntax (Haskell convention) |
 | Fixed-point trig raycasting | ✅ done | Sin/cos×64 tables passed as list args from Python |
 | Frame assembly in NELA-S | ✅ done | `shade_of`, `frame_cell`, `make_frame`, `render_frame` |
-| I/O-only Python harness | ✅ done | `wolf_player.py` — keyboard + print only |
+| I/O-only Python harness | ✅ done | `examples/wolf/src/wolf_player.py` — keyboard + print only |
 
 ## v0.6 — Completed
 
@@ -524,7 +529,7 @@ Float literals and math builtins added. Python harness is now **strictly I/O** �
 | `floor`/`ceil`/`round`/`abs` builtins | ✅ done | Return Python `int` where applicable |
 | Eliminate sin/cos tables | ✅ done | `deg_to_rad` + `sin`/`cos` replace all `get_nth sin_tab a` calls |
 | Float positions in wolf_game | ✅ done | 1 unit = 1 cell; `is_wall` uses `floor` for grid lookup |
-| I/O-only Python harness | ✅ done | `wolf_player.py` — zero precomputed data, keyboard + print only |
+| I/O-only Python harness | ✅ done | `examples/wolf/src/wolf_player.py` — zero precomputed data, keyboard + print only |
 | Wolf Game test suite | ✅ done | 14 test cases covering trig, raycasting, game update |
 
 ## v0.7 — Completed
@@ -537,7 +542,7 @@ O(1) list indexing, character literals, and char↔int conversion.
 | `char` literals `'x'` | ✅ done | Single-quoted: `'A'`, `'0'`, `' '`; stored as Python `str` |
 | `ord c` builtin | ✅ done | `ord 'A'` → `65` (char → int) |
 | `chr n` builtin | ✅ done | `chr 65` → `'A'` (int → char) |
-| wolf_game.nela O(1) map lookup | ✅ done | `map_get map idx = get map idx` (was `head (drop idx map)`) |
+| examples/wolf/wolf_game.nela O(1) map lookup | ✅ done | `map_get map idx = get map idx` (was `head (drop idx map)`) |
 
 ## v0.8 — Completed
 
@@ -559,9 +564,9 @@ IOToken linear I/O. The entire game loop is now pure NELA-S.
 | `io_key token` builtin | ✅ done | Reads one keypress; returns `(char, token')` pair; linear: consumes token |
 | `io_print frame token` builtin | ✅ done | Calls Python print callback; returns `token'`; linear: consumes token |
 | `IOToken` class in runtime | ✅ done | Wraps `read_key` + `print_frame` callbacks; `.fresh()` produces successor token |
-| `key_action c` in wolf_game.nela | ✅ done | Maps char → action code in NELA-S (was Python dict) |
-| `game_loop` in wolf_game.nela | ✅ done | Full recurse-until-quit loop in NELA-S; Python harness reduced to 2 lines |
-| wolf_player.py mission compliance | ✅ done | Python provides only: 2 callbacks + `IOToken(...)` + `run_program(...)` |
+| `key_action c` in examples/wolf/wolf_game.nela | ✅ done | Maps char → action code in NELA-S (was Python dict) |
+| `game_loop` in examples/wolf/wolf_game.nela | ✅ done | Full recurse-until-quit loop in NELA-S; Python harness reduced to 2 lines |
+| examples/wolf/src/wolf_player.py mission compliance | ✅ done | Python provides only: 2 callbacks + `IOToken(...)` + `run_program(...)` |
 
 ## v0.10 — Completed
 
@@ -575,7 +580,7 @@ NELA-C compiler: NELA-S → interaction net bytecode (`.nelac`).
 | Serialise / deserialise | ✅ done | `net_to_bytes` / `bytes_to_net` / `bytes_to_py` roundtrip |
 | Disassembler | ✅ done | `disassemble(bytes)` → human-readable node listing |
 | `compile_and_run` API | ✅ done | Compiles, reduces, serialises; returns `(python_result, bytes)` |
-| 19 compiler tests | ✅ done | qs, mergesort, wolf_game (deg_to_rad, norm_angle, is_wall, key_action, use_door, …) |
+| 19 compiler tests | ✅ done | qs, mergesort, examples/wolf/wolf_game (deg_to_rad, norm_angle, is_wall, key_action, use_door, …) |
 
 Compatibility note:
 

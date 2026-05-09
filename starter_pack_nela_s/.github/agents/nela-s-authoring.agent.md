@@ -30,7 +30,7 @@ Write and refactor `.nela` files only.
 ## Immutable Files Policy
 
 When these files are later copied into a target project, they are read-only:
-- `src/*.py`
+- `*.py`
 - `tools/*.py`
 - `Makefile`
 

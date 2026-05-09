@@ -16,7 +16,7 @@ Supported ops:
   io_key, io_print
 """
 
-import json, math, sys, time
+import json, math, os, sys, time
 from typing import Any
 from nela_parser import parse_program, parse_file
 
@@ -367,6 +367,14 @@ def run_vm_test(prog: dict, program: list, label: str) -> bool:
 
 
 if __name__ == "__main__":
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _load(path):
+        return parse_file(os.path.join(base, "examples", path))
+
+    def _load_wolf(path):
+        return parse_file(os.path.join(base, "examples", "wolf", path))
+
     sort_cases = [
         [],
         [1],
@@ -497,7 +505,7 @@ if __name__ == "__main__":
     print("\n" + "#"*55)
     print("# WOLF GRID")
     print("#"*55)
-    wolf_prog = _load("wolf_grid.nela")
+    wolf_prog = _load_wolf("wolf_grid.nela")
     wolf_pass = all(
         run_wolf_test(wolf_prog, fn, py_fn, args, label)
         for fn, py_fn, args, label in wolf_cases
@@ -522,7 +530,7 @@ if __name__ == "__main__":
             return abs(got - ref) < 1e-9
         return got == ref
 
-    wg_game_prog = _load("wolf_game.nela")
+    wg_game_prog = _load_wolf("wolf_game.nela")
     wg_cases = [
         # (fn, args, ref_fn, label)
         ("deg_to_rad",  [0],   lambda: 0.0,                          "deg_to_rad(0)=0"),

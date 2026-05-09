@@ -7,7 +7,7 @@ with actual code sections. It's designed to enforce that LLMs update the header
 whenever the file structure changes.
 
 Usage:
-    python tools/validate_nela_header.py examples/wolf_game.nela [--regenerate]
+    python tools/validate_nela_header.py examples/wolf/wolf_game.nela [--regenerate]
     
     flags:
       --regenerate    Overwrite header with computed index (test-only)
