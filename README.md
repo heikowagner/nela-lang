@@ -187,6 +187,55 @@ What makes this non-trivial in NELA-S:
 - Stack operations require careful `let`-binding for popped values and `::` reconstruction
 - Test matrix: arithmetic, DUP/SWAP interaction, nested operations, stack underflow edge cases
 
+### Interaction Net Visualizer — `examples/netviz_interaction_net.py`
+
+Reads any `.nela` source file, compiles a selected entry function, and renders the resulting
+interaction net as a black-and-white SVG with explicit principal and auxiliary ports (Lafont-style
+presentation).
+
+Companion demo source: `examples/netviz_demo.nela`
+
+Run:
+
+```bash
+python3 examples/netviz_interaction_net.py \
+  --input examples/netviz_demo.nela \
+  --fn netviz_demo \
+  --args '[[5,3,8,1]]' \
+  --out assets/netviz_demo.svg
+```
+
+### Quicksort Interaction Net (Example)
+
+Generated from `examples/quicksort.nela` with entry function `qs`:
+
+```bash
+python3 examples/netviz_interaction_net.py \
+  --input examples/quicksort.nela \
+  --fn qs \
+  --net-mode unreduced \
+  --legend-scope all \
+  --bridge-worlds on \
+  --out assets/quicksort_qs_net_bridge.svg
+```
+
+Output image:
+
+![Quicksort interaction net](assets/quicksort_qs_net_bridge.svg)
+
+Reading checklist:
+
+| What you see | Meaning in this net |
+|---|---|
+| `FREF` | Function reference (call target), here mainly recursive `qs` |
+| `APP` | Function application node; arguments are wired into calls |
+| `MAT` | Lowered `match` dispatch (base case vs. `h::t` case) |
+| `CON`, `NIL` | List construction and empty list |
+| `FILTER_LE`, `FILTER_GT` | Quicksort partition filters (`<= pivot`, `> pivot`) |
+| Filled port dot | Principal port |
+| Hollow port dot | Auxiliary port |
+| Curved wire | Connection between ports (interaction-net edge) |
+
 ---
 
 ---

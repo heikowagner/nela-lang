@@ -1,0 +1,22 @@
+-- ============================================================================
+-- NELA v0.10 — Interaction Net Visualization Demo
+-- LLM-OPTIMIZED SINGLE-SECTION FILE
+-- ============================================================================
+--
+-- SECTION INDEX FOR LLM NAVIGATION (auto-maintained):
+--   SECTION_DEMO   [16-23]    netviz_demo
+--
+-- ── @SECTION_DEMO [16-23] ───────────────────────────────────────────────────
+-- Functions: netviz_demo
+-- Purpose: Small deterministic function suitable for interaction-net visualization
+-- Called_by: examples/netviz_interaction_net.py
+-- Key_vars: [xs, h, t]
+-- Details: Produces sorted list with list metadata pair
+
+def netviz_demo xs =
+  match xs
+  | []   = (0, [])
+  | h::t =
+      let left  = [x <- t | x <= h] in
+      let right = [x <- t | x > h] in
+      (1 + len t, left ++ [h] ++ right)

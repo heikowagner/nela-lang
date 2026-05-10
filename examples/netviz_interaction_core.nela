@@ -1,0 +1,339 @@
+-- ============================================================================
+-- NELA v0.11 — Interaction Net Visualization Core
+-- LLM-OPTIMIZED SINGLE-FILE MODULE
+-- ============================================================================
+--
+-- SECTION INDEX FOR LLM NAVIGATION (auto-maintained):
+--   SECTION_LISTS      [ 15- 30]      contains | add_unique
+--   SECTION_GRAPH      [ 32- 58]      neighbors | enqueue_unseen
+--   SECTION_BFS        [ 60-110]      bfs | has_layer | max_layer | assign_disconnected | compute_layers
+--   SECTION_EDGES      [112-233]      fst3 | snd3 | thd3 | edge0 | edge1 | edge2 | edge3 | norm_pair | contains_pair | collect_pairs | unique_pairs | arity_of | ports_for | zip_edges | extra_edges | edges_for_pair | build_edges | canonical_edges
+--   SECTION_STATS      [235-257]      has_reverse_ref | count_reciprocal | edge_stats
+--   SECTION_CALLGRAPH  [259-290]      out_neighbors | enqueue_unseen_ids | bfs_ids | reachable_nodes
+--   SECTION_LAYOUT     [292-343]      layer_of | nid_of | max_layer_pairs | range_from | nodes_in_layer | max_ints | bucket_sizes | make_buckets | layout_plan
+--   SECTION_LEGEND     [345-349]      choose_legend_ids
+--
+-- ARCHITECTURE:
+--   Pure NELA-S graph core used by the Python netviz adapter.
+--   Computes BFS layers for a node graph represented as undirected edge pairs.
+
+-- ── @SECTION_LISTS [15-30] ───────────────────────────────────────────────────
+-- Functions: contains, add_unique
+-- Purpose: List predicates and dedup helpers
+
+def contains xs x =
+  match xs
+  | [] = 0
+  | h::t = if h == x then 1 else contains t x
+
+def add_unique acc x =
+  if contains acc x == 1 then acc
+  else x :: acc
+
+-- ── @SECTION_GRAPH [32-58] ───────────────────────────────────────────────────
+-- Functions: neighbors, enqueue_unseen
+-- Purpose: Build adjacency and queue expansion for BFS
+
+def neighbors edges nid =
+  match edges
+  | [] = []
+  | e::t =
+      let a = fst e in
+      let b = snd e in
+      let rest = neighbors t nid in
+      if a == nid then add_unique rest b
+      else if b == nid then add_unique rest a
+      else rest
+
+def enqueue_unseen ns d visited q =
+  match ns
+  | [] = q
+  | n::t =
+      if contains visited n == 1 then enqueue_unseen t d visited q
+      else enqueue_unseen t d visited (q ++ [(n, d)])
+
+-- ── @SECTION_BFS [60-83] ─────────────────────────────────────────────────────
+-- Functions: bfs, compute_layers
+-- Purpose: Compute node->layer pairs from root using breadth-first traversal
+
+def bfs queue visited layers edges =
+  match queue
+  | [] = layers
+  | item::rest =
+      let nid = fst item in
+      let d   = snd item in
+      if contains visited nid == 1 then bfs rest visited layers edges
+      else
+        let visited2 = nid :: visited in
+        let layers2  = (nid, d) :: layers in
+        let ns       = neighbors edges nid in
+        let rest2    = enqueue_unseen ns (d + 1) visited2 rest in
+        bfs rest2 visited2 layers2 edges
+
+def has_layer layers nid =
+  match layers
+  | [] = 0
+  | item::t =
+      if fst item == nid then 1
+      else has_layer t nid
+
+def max_layer layers =
+  match layers
+  | [] = 0
+  | item::t =
+      let d = snd item in
+      let m = max_layer t in
+      if d > m then d else m
+
+def assign_disconnected nodes layers next =
+  match nodes
+  | [] = layers
+  | n::t =
+      if has_layer layers n == 1 then assign_disconnected t layers next
+      else assign_disconnected t ((n, next) :: layers) (next + 1)
+
+-- nodes is accepted for interface stability with Python caller.
+def compute_layers nodes edges root =
+  let connected = bfs [(root, 0)] [] [] edges in
+  let start = max_layer connected + 1 in
+  assign_disconnected nodes connected start
+
+-- ── @SECTION_EDGES [112-233] ────────────────────────────────────────────────
+-- Functions: fst3, snd3, thd3, edge0, edge1, edge2, edge3, norm_pair, contains_pair, collect_pairs, unique_pairs, arity_of, ports_for, zip_edges, extra_edges, edges_for_pair, build_edges, canonical_edges
+-- Purpose: Deterministic edge canonicalization for interaction-net drawing
+
+def fst3 t = head t
+def snd3 t = head (tail t)
+def thd3 t = head (tail (tail t))
+
+def edge0 e = head e
+def edge1 e = head (tail e)
+def edge2 e = head (tail (tail e))
+def edge3 e = head (tail (tail (tail e)))
+
+def norm_pair a b =
+  if a <= b then (a, b)
+  else (b, a)
+
+def contains_pair pairs p =
+  match pairs
+  | [] = 0
+  | q::t =
+      if fst q == fst p then
+        if snd q == snd p then 1
+        else contains_pair t p
+      else contains_pair t p
+
+def collect_pairs refs acc =
+  match refs
+  | [] = acc
+  | r::t =
+      let p = norm_pair (fst3 r) (snd3 r) in
+      if contains_pair acc p == 1 then collect_pairs t acc
+      else collect_pairs t (acc ++ [p])
+
+def unique_pairs refs = collect_pairs refs []
+
+def arity_of port_counts nid =
+  match port_counts
+  | [] = 1
+  | p::t =
+      if fst p == nid then snd p
+      else arity_of t nid
+
+def ports_for refs src dst =
+  match refs
+  | [] = []
+  | r::t =
+      let rest = ports_for t src dst in
+      if fst3 r == src then
+        if snd3 r == dst then rest ++ [thd3 r]
+        else rest
+      else rest
+
+def zip_edges lports rports =
+  match lports
+  | [] = []
+  | lp::lt =
+      match rports
+      | [] = []
+      | rp::rt = [lp :: rp :: []] ++ zip_edges lt rt
+
+def reify_edges pairs left right =
+  match pairs
+  | [] = []
+  | p::t = (left :: edge0 p :: right :: edge1 p :: []) :: reify_edges t left right
+
+def extra_edges ports idx arity =
+  match ports
+  | [] = []
+  | p::t = [p :: (idx % arity) :: []] ++ extra_edges t (idx + 1) arity
+
+def edges_for_pair pair refs port_counts =
+  let left = fst pair in
+  let right = snd pair in
+  let l_to_r = ports_for refs left right in
+  let r_to_l = ports_for refs right left in
+  let lk = len l_to_r in
+  let rk = len r_to_l in
+  if lk > 0 then
+    if rk > 0 then
+      let k = if lk < rk then lk else rk in
+      let lz = take k l_to_r in
+      let rz = take k r_to_l in
+      let lrest = drop k l_to_r in
+      let rrest = drop k r_to_l in
+      let zipped = zip_edges lz rz in
+      let zip_edges_full = reify_edges zipped left right in
+      let right_arity = arity_of port_counts right in
+      let left_arity = arity_of port_counts left in
+      let l_extra_raw = extra_edges lrest 0 right_arity in
+      let r_extra_raw = extra_edges rrest 0 left_arity in
+      let l_extra = reify_edges l_extra_raw left right in
+      let r_extra = reify_edges r_extra_raw right left in
+      zip_edges_full ++ l_extra ++ r_extra
+    else
+      let right_arity = arity_of port_counts right in
+      let raw = extra_edges l_to_r 0 right_arity in
+      reify_edges raw left right
+  else
+    let left_arity = arity_of port_counts left in
+    let raw = extra_edges r_to_l 0 left_arity in
+    reify_edges raw right left
+
+def build_edges pairs refs port_counts =
+  match pairs
+  | [] = []
+  | p::t = edges_for_pair p refs port_counts ++ build_edges t refs port_counts
+
+-- refs: [[src_nid, dst_nid, src_port], ...]
+-- port_counts: [(nid, arity_plus_principal_ports), ...]
+-- returns: [[a_nid, a_port, b_nid, b_port], ...]
+def canonical_edges refs port_counts =
+  let pairs = unique_pairs refs in
+  build_edges pairs refs port_counts
+
+-- ── @SECTION_STATS [235-257] ────────────────────────────────────────────────
+-- Functions: has_reverse_ref, count_reciprocal, edge_stats
+-- Purpose: Directed-reference statistics used for visualization diagnostics
+
+def has_reverse_ref refs src dst =
+  match refs
+  | [] = 0
+  | r::t =
+      if fst3 r == dst then
+        if snd3 r == src then 1
+        else has_reverse_ref t src dst
+      else has_reverse_ref t src dst
+
+def count_reciprocal refs all_refs =
+  match refs
+  | [] = 0
+  | r::t =
+      let src = fst3 r in
+      let dst = snd3 r in
+      let hit = has_reverse_ref all_refs src dst in
+      hit + count_reciprocal t all_refs
+
+-- returns [total_refs, reciprocal_refs]
+def edge_stats refs =
+  let total = len refs in
+  let recp = count_reciprocal refs refs in
+  total :: recp :: []
+
+-- ── @SECTION_CALLGRAPH [259-290] ────────────────────────────────────────────
+-- Functions: out_neighbors, enqueue_unseen_ids, bfs_ids, reachable_nodes
+-- Purpose: Directed reachability for AST call-graph closure
+
+def out_neighbors edges nid =
+  match edges
+  | [] = []
+  | e::t =
+      let src = fst e in
+      let dst = snd e in
+      let rest = out_neighbors t nid in
+      if src == nid then add_unique rest dst
+      else rest
+
+def enqueue_unseen_ids ns visited q =
+  match ns
+  | [] = q
+  | n::t =
+      if contains visited n == 1 then enqueue_unseen_ids t visited q
+      else enqueue_unseen_ids t visited (q ++ [n])
+
+def bfs_ids queue visited edges =
+  match queue
+  | [] = visited
+  | nid::rest =
+      if contains visited nid == 1 then bfs_ids rest visited edges
+      else
+        let visited2 = visited ++ [nid] in
+        let ns = out_neighbors edges nid in
+        let rest2 = enqueue_unseen_ids ns visited2 rest in
+        bfs_ids rest2 visited2 edges
+
+-- nodes is accepted for interface stability with Python caller.
+def reachable_nodes nodes edges root = bfs_ids [root] [] edges
+
+-- ── @SECTION_LAYOUT [292-343] ───────────────────────────────────────────────
+-- Functions: layer_of, nid_of, max_layer_pairs, range_from, nodes_in_layer, max_ints, bucket_sizes, make_buckets, layout_plan
+-- Purpose: Layout planning metadata for Python SVG adapter
+
+def layer_of p = snd p
+def nid_of p = fst p
+
+def max_layer_pairs pairs =
+  match pairs
+  | [] = 0
+  | p::t =
+      let l = layer_of p in
+      let m = max_layer_pairs t in
+      if l > m then l else m
+
+def range_from i maxv =
+  if i > maxv then []
+  else i :: range_from (i + 1) maxv
+
+def nodes_in_layer pairs l =
+  match pairs
+  | [] = []
+  | p::t =
+      let rest = nodes_in_layer t l in
+      if layer_of p == l then rest ++ [nid_of p]
+      else rest
+
+def max_ints xs =
+  match xs
+  | [] = 1
+  | h::t =
+      let m = max_ints t in
+      if h > m then h else m
+
+def bucket_sizes layers pairs =
+  match layers
+  | [] = []
+  | l::t = len (nodes_in_layer pairs l) :: bucket_sizes t pairs
+
+def make_buckets layers pairs =
+  match layers
+  | [] = []
+  | l::t = (l, nodes_in_layer pairs l) :: make_buckets t pairs
+
+-- layer_pairs: [(nid, layer), ...]
+-- returns [max_layer, max_count, buckets]
+def layout_plan layer_pairs =
+  let maxl = max_layer_pairs layer_pairs in
+  let layers = range_from 0 maxl in
+  let sizes = bucket_sizes layers layer_pairs in
+  let maxc = max_ints sizes in
+  let buckets = make_buckets layers layer_pairs in
+  maxl :: maxc :: buckets :: []
+
+-- ── @SECTION_LEGEND [345-349] ───────────────────────────────────────────────
+-- Functions: choose_legend_ids
+-- Purpose: Select function id set used by legend rendering
+
+-- scope: 1 => all_ids, 0 => reachable_ids
+def choose_legend_ids scope all_ids reachable_ids =
+  if scope == 1 then all_ids else reachable_ids
